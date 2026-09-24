@@ -8,9 +8,10 @@ typeset -a studio_candidates
 [[ -z "$studio_requested" ]] || studio_candidates+=("$studio_requested")
 if [[ -n "${QWEN_STUDIO_PYTHON:-}" ]]; then
   studio_candidates=("$QWEN_STUDIO_PYTHON")
-elif [[ -n "${QWEN_STUDIO_PYTHON_BOOTSTRAP:-}" ]]; then
+elif [[ -n "${QWEN_STUDIO_PYTHON_BOOTSTRAP:-}" && "$studio_mode" != all ]]; then
   studio_candidates=("$QWEN_STUDIO_PYTHON_BOOTSTRAP")
 else
+  [[ -z "${QWEN_STUDIO_PYTHON_BOOTSTRAP:-}" ]] || studio_candidates+=("$QWEN_STUDIO_PYTHON_BOOTSTRAP")
   if [[ -f "$studio_data/runtime-path.json" ]]; then
     studio_selected=$(/usr/bin/plutil -extract python raw -o - "$studio_data/runtime-path.json" 2>/dev/null || true)
     if [[ -n "$studio_selected" ]]; then
