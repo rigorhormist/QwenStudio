@@ -9,10 +9,11 @@ def bundle(output):
     entries={}
     for name in ('backend','web'):
         for file in (ROOT/'windows'/name).rglob('*'):
-            if file.is_file() and '__pycache__' not in file.parts and not file.name.startswith('._') and file.suffix in ('.py','.js','.json','.css','.html','.svg','.png','.woff2'):
+            if file.is_file() and '__pycache__' not in file.parts and not file.name.startswith('._') and file.suffix in ('.py','.js','.json','.css','.html','.svg','.png','.woff2','.txt'):
                 entries[file.relative_to(ROOT/'windows').as_posix()]=file
     for name in ('requirements.txt','find-python.ps1'):entries[name]=ROOT/'windows'/name
     for name in ('LICENSE','LICENSE.model.txt','NOTICE','THIRD_PARTY_NOTICES.md'):entries[name]=ROOT/name
+    for file in (ROOT/'licenses').glob('*.txt'):entries['licenses/'+file.name]=file
     with zipfile.ZipFile(output,'w',zipfile.ZIP_DEFLATED) as archive:
         for name,file in sorted(entries.items()):
             info=zipfile.ZipInfo(name,(2026,1,1,0,0,0));info.compress_type=zipfile.ZIP_DEFLATED

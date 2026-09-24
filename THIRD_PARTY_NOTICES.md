@@ -22,4 +22,4 @@ CircleMenu was adapted for a desktop web view: the actions, positioning, keyboar
 
 The Q icon was created for this project. It is not an upstream Qwen or Ollama logo. Project naming describes compatibility and does not imply endorsement. The upstream model license separately restricts use of Qwen names for derivative products; review its terms before redistributing model-derived products.
 
-Release packages include available .NET and WebView2 notices. Python packages are installed separately by setup scripts and carry their own license files. See each upstream project for the full terms.
+Release packages include available .NET and WebView2 notices. The standalone Windows EXE embeds these notices alongside its application resources. Python packages are installed separately by the in-app environment installer and carry their own license files. See each upstream project for the full terms.
