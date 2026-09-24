@@ -165,8 +165,9 @@ function Get-StudioPythonList([string]$Selected = '') {
         if ($result -and $executables.Add($result.executable)) { $items += $result }
         if ($result -and $explicit -and $candidate -eq $explicit) { $explicit = $result.executable }
     }
-    $chosen = if ($explicit) { @($items | Where-Object { $_.executable -eq $explicit -and $_.compatible }) } else { @($items | Where-Object { $_.compatible }) }
-    $python = if ($chosen.Count) { $chosen[0] } else { $null }
+    # PowerShell 5.1 does not expose .Count on a single PSCustomObject.
+    # Select directly so a one-element result cannot disappear as an empty list.
+    $python = $items | Where-Object { $_.compatible -and ((-not $explicit) -or $_.executable -eq $explicit) } | Select-Object -First 1
     [pscustomobject]@{found=($null -ne $python);python=$python;candidates=@($items);rejected=@($items | Where-Object { -not $_.compatible });selected=$explicit}
 }
 
