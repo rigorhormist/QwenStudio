@@ -1,6 +1,6 @@
 /* Image controls share one contract with both desktop backends. */
 function generationOptions(){return {enhance:$('#enhance').checked,ratio_mode:$('#ratio-mode').value,exact_text:$('#exact-text').value,negative_prompt:$('#negative-prompt').value,cfg:Number($('#cfg').value),count:Number($('#image-count').value)}}
-function anyDownloadRunning(){return !!(lastStatus?.model.downloading||Object.values(lastStatus?.enhancers||{}).some(m=>m.downloading))}
+function anyDownloadRunning(){return !!(lastStatus?.storage?.operation?.busy||lastStatus?.model.downloading||Object.values(lastStatus?.enhancers||{}).some(m=>m.downloading))}
 function renderEnhancerDownloads(){
  const container=$('#enhancer-downloads');
  for(const [target,title] of [['pe-t2i','生图增强模型'],['pe-i2i','改图增强模型']]){
@@ -11,13 +11,16 @@ function renderEnhancerDownloads(){
    const detail=document.createElement('p');detail.className='muted small';
    const progress=document.createElement('progress');progress.max=1;
    const button=document.createElement('button');button.className='text-button';button.type='button';
-   button.onclick=safe(async()=>{downloadTarget=target;if(!lastStatus?.model.source){chooseDownloadSource();return}await beginDownload(lastStatus.model.source)});
-   const error=document.createElement('p');error.className='error-text';row.append(heading,detail,progress,button,error);container.append(row);
+   button.onclick=safe(async()=>{if(lastStatus?.enhancers?.[target]?.downloading){await api('model/download/cancel',{target});await refreshStatus();return}downloadTarget=target;if(!lastStatus?.model.source){chooseDownloadSource();return}await beginDownload(lastStatus.model.source)});
+   const error=document.createElement('p');error.className='error-text';row.append(heading,detail,progress,button,error);
+   const path=document.createElement('p');path.className='path model-directory-path';path.setAttribute('translate','no');row.append(path);
+   row.append(modelDirectoryActions(target));container.append(row);
   }
   const model=lastStatus?.enhancers?.[target];if(!model)continue;
+  row.querySelector('.model-directory-path').textContent=model.path||'';
   const detail=row.querySelector('.muted');detail.textContent=model.ready?'已就绪':`${(model.bytes/1e9).toFixed(1)} / ${(model.total/1e9).toFixed(1)} GB`+(model.downloading?'　'+(model.speed>0?(model.speed/1e6).toFixed(1)+' MB/s':t('正在测量速度…')):'');
   row.querySelector('progress').value=model.total?model.bytes/model.total:0;
-  const button=row.querySelector('button');button.disabled=model.ready||model.downloading||downloadStarting;button.textContent=model.ready?'已下载':model.verifying?'正在校验文件':model.downloading?'正在下载…':model.bytes?'继续下载':'下载模型';
+  const button=row.querySelector('button');button.disabled=model.ready||downloadStarting||lastStatus?.storage?.operation?.busy;button.classList.toggle('stop-download',model.downloading);button.textContent=model.ready?'已下载':model.downloading?'停止下载':model.bytes?'继续下载':'下载模型';
   row.querySelector('.error-text').textContent=model.error||'';row.querySelector('.error-text').hidden=!model.error;
  }
 }

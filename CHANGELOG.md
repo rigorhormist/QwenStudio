@@ -1,5 +1,14 @@
 # Changelog
 
+## 2.2.4 (2026-09-24)
+
+- Both platforms can select model and dependency folders, including external drives.
+- Import existing image/PE models and Hugging Face snapshots in place with local verification and cancellation.
+- Locate existing Python environments by folder. New dependency caches and temporary files follow the chosen installation folder.
+- Preserve previous locations after failed imports and report disconnected drives without silently changing storage.
+
+两端均支持选择下载目录、复用已有模型和 Python 环境。详见 [2.2.4 发布说明](docs/releases/v2.2.4.md)。
+
 ## 2.2.3 (2026-09-24)
 
 - Windows ships as a standalone EXE with embedded application resources and in-app dependency repair.

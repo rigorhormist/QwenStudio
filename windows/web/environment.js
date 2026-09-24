@@ -15,6 +15,9 @@
   }
   select.disabled=state.busy||state.pythonLocked||!candidates.length;
   $('#python-browse').disabled=state.busy||state.pythonLocked;
+  $('#python-existing').disabled=state.busy||state.pythonLocked;
+  $('#dependency-directory-browse').disabled=state.busy||state.pythonLocked;
+  $('#dependency-directory').textContent=state.dependencyDirectory||'';
   $('#python-path').textContent=state.selectedPython||'';$('#python-path').hidden=!state.selectedPython;
   $('#python-locked').hidden=!state.pythonLocked;
   $('#cuda-choice').hidden=state.platform!=='windows';$('#cuda-version').value=state.cudaVersion||'cu130';$('#cuda-version').disabled=state.busy;
@@ -31,6 +34,8 @@
  function pending(action,extra={}){state.busy=true;state.ready=false;render();native(action,extra)}
  $('#python-select').onchange=()=>{state.selectedPython=$('#python-select').value;pending('environmentPython',{python:state.selectedPython})};
  $('#python-browse').onclick=()=>native('environmentBrowse');
+ $('#python-existing').onclick=()=>native('environmentExisting');
+ $('#dependency-directory-browse').onclick=()=>native('environmentDirectory');
  $('#dependency-source').onchange=()=>{state.dependencySource=$('#dependency-source').value;native('environmentSource',{source:state.dependencySource,cuda:$('#cuda-version').value})};
  $('#cuda-version').onchange=()=>{state.cudaVersion=$('#cuda-version').value;native('environmentSource',{source:state.dependencySource||'official',cuda:state.cudaVersion})};
  setInterval(()=>{if(installStarted&&state.busy&&state.progress){const seconds=Math.floor((Date.now()-installStarted)/1000);$('#install-time').textContent=Math.floor(seconds/60)+':'+String(seconds%60).padStart(2,'0')}},1000);

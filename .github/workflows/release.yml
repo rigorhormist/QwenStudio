@@ -38,6 +38,7 @@ jobs:
       - run: python -m unittest discover -s tests -v
       - run: node --check macos/web/generation.js
       - run: node --check macos/web/annotation.js
+      - run: node --check macos/web/storage.js
       - run: node --check macos/web/environment.js
       - run: node --check macos/web/i18n.js
       - run: ./windows/tests/python-discovery.ps1

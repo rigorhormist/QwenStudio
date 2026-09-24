@@ -2,7 +2,7 @@
 
 [简体中文](generation.zh-CN.md) | [Home](../README.en.md)
 
-Qwen Studio 2.2.3 uses the Diffusers path for Qwen-Image-2.1, with the published interfaces, recommended settings and Prompt Enhancer profiles. The table separates model capabilities from app controls and hardware limits. Supporting an option does not mean it has been tested on every device.
+Qwen Studio 2.2.4 uses the Diffusers path for Qwen-Image-2.1, with the published interfaces, recommended settings and Prompt Enhancer profiles. The table separates model capabilities from app controls and hardware limits. Supporting an option does not mean it has been tested on every device.
 
 ## Available controls
 

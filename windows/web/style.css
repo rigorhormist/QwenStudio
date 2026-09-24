@@ -150,3 +150,9 @@ textarea:focus-visible{background:transparent}
 #image-viewer .viewer-toolbar{flex-wrap:wrap}
 
 #enhancer-reminder{max-width:500px} .reminder-choice{display:flex;align-items:center;gap:10px;margin:24px 0;color:var(--muted,#666);font-size:14px} .reminder-choice input{width:16px;height:16px;accent-color:#555} #enhancer-reminder p{line-height:1.7}
+
+.directory-actions{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin:12px 0}.directory-actions .text-button{background:var(--surface,#f3f3f3);padding:9px 15px;border-radius:20px;font-size:12px}.directory-actions .text-button:hover{background:#e7e7e7}.directory-actions button:disabled{opacity:.45;cursor:default}.storage-operation{margin:16px 0;padding:14px 18px;background:#f5f5f5;border-radius:14px}.storage-operation p{margin:4px 0}.storage-operation span{font-size:12px;color:#686868;font-variant-numeric:tabular-nums}.model-directory-path{font-size:12px;overflow-wrap:anywhere}
+
+#storage-cancel{color:#a54336;margin-left:12px}
+
+.stop-download,.primary-button.stop-download{color:#a54336;background:#fff0ed}.stop-download:hover,.primary-button.stop-download:hover{background:#fae4de}

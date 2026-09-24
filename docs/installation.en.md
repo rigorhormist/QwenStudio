@@ -10,7 +10,7 @@ Setup has three stages: download the desktop app, install Python dependencies, t
 
 ## Windows
 
-1. Open `QwenStudio-2.2.3-windows-x64.exe`. No setup/start scripts or .NET SDK are needed.
+1. Open `QwenStudio-2.2.4-windows-x64.exe`. No setup/start scripts or .NET SDK are needed.
 2. The app extracts its embedded UI and backend, then opens the environment check. If WebView2 is missing, use the native screen's download link and check again after installing it.
 3. Select a Python interpreter. Each entry shows its version, full path and virtual-environment status. Browse to a `python.exe` if discovery misses it. Incompatible interpreters are listed but disabled. If Python is missing, use Download Python to install 64-bit Python 3.10–3.13 (3.11 recommended).
 4. Choose a dependency source and CUDA version, then select Install or repair dependencies. Working CUDA packages are reused. Repairs are staged in a separate environment, with current steps, file downloads, available transfer speeds and logs shown in the app.
@@ -24,7 +24,7 @@ The EXE includes .NET, the UI, backend and dependency installer. It excludes Pyt
 
 1. On an Apple Silicon Mac with macOS 14 or later, extract the ZIP and open `Qwen Studio.app`. You can move it to Applications first.
 2. The environment screen checks each component. If Python is missing, use Download Python to install the python.org Python 3.11 universal2 build. Native arm64 Python 3.10–3.13 is supported.
-3. Select Install or repair dependencies. Dependencies go into `~/Library/Application Support/Qwen Studio/runtime`; checks run again after installation.
+3. Choose a dependency folder and source, then select Install or repair dependencies. The default folder is `~/Library/Application Support/Qwen Studio/runtime`; checks run again after installation.
 4. Select Open Qwen Studio when all required checks pass, then choose a model download source in Settings.
 
 The App has an ad-hoc signature and is not Apple-notarized. If macOS cannot verify the developer, check the source and SHA-256 checksum first, then use the opening option offered in Privacy & Security. There is no need to disable system security checks.
@@ -51,6 +51,19 @@ The progress bar represents the current file's real bytes, not an estimated tota
 
 Environment checks validate only Qwen Studio and its dependency graph. Unrelated packages in a shared Python installation do not block entry. Independent import checks run concurrently; each child is bounded to 60 seconds and the desktop probe is capped at three minutes. Stop cancels checks or repairs, and the result and action buttons remain visible while scrolling. A healthy environment disables unnecessary repair.
 
+## Choose download folders or reuse existing files
+
+Both platforms offer the same controls:
+
+- **Settings**: the image model and each optional enhancer have “Choose download folder” and “Use an existing model” buttons. Choosing a parent folder gives each model its own subfolder. Choosing the model folder itself preserves any partial downloads there.
+- **Environment check**: “Dependency download folder” controls where new environments, pip caches and installation temporary files are stored. “Use an existing environment folder” accepts a venv, Conda environment or Python installation. “Browse…” can also select a Python interpreter file directly.
+
+For existing models, choose the complete model folder, its named parent, or a Hugging Face cache. If several cached revisions are present, select the specific `snapshots/<revision>` folder. The app checks against its pinned file manifest. Importing an unverified model reads the local files to calculate SHA-256; progress and a stop button are shown. Verified weights are used in place without copying or downloading. Read-only model folders are supported; verification records stay in the app data directory.
+
+For an incomplete download, use “Choose download folder”, select that model folder and resume downloading. Other model versions, GGUF and LoRA files do not match the complete model manifest and cannot be substituted.
+
+Changing a download folder does not move or delete existing files, conversations or images. Folder preferences survive updates. Stop model tasks, downloads and verification before switching. If an external drive is disconnected, reconnect it or choose another folder before continuing. Working Python packages are reused; repairs create a separate environment in the selected folder.
+
 ## Model downloads and resuming
 
 The first download requires an explicit source choice. ModelScope may be easier to reach from mainland China; choose Hugging Face when it is reliable on your network. The selection is stored locally and can be changed later.
@@ -72,9 +85,9 @@ Image inference is handled separately by Diffusers. Thinking controls follow cap
 | Mac | `~/Library/Application Support/Qwen Studio` | `models/Qwen-Image-2.1` under the data directory |
 | Windows | `%LOCALAPPDATA%\QwenStudio` | `models\Qwen-Image-2.1` under the data directory |
 
-On Windows, create `settings.local.json` next to the EXE using the format in the source repository’s `windows/settings.example.json` and set your directories. Backslashes in JSON must be escaped as `\\`. Download packages never contain or replace your local configuration. After a successful environment check, Windows remembers storage locations in `%LOCALAPPDATA%\QwenStudio\locations.json`. New packages reuse those model and conversation folders; app-local `settings.local.json` takes precedence.
+On Windows, create `settings.local.json` next to the EXE using the format in the source repository’s `windows/settings.example.json` and set your directories. Backslashes in JSON must be escaped as `\\`. Download packages never contain or replace your local configuration. After a successful environment check, Windows remembers storage locations in `%LOCALAPPDATA%\QwenStudio\locations.json`. New packages reuse those model and conversation folders; app-local `settings.local.json` takes precedence over the legacy location record. A model folder selected in the app takes precedence over both.
 
-Both platforms accept `QWEN_STUDIO_DATA`. Windows also accepts `QWEN_STUDIO_MODEL`; Mac accepts `QWEN_STUDIO_PYTHON` for a custom interpreter. Mac model storage follows the data directory. Apps started through Finder do not inherit temporary shell environment variables.
+Both platforms accept `QWEN_STUDIO_DATA`, `QWEN_STUDIO_MODEL` and `QWEN_STUDIO_PYTHON`. Explicit model and interpreter overrides lock the corresponding in-app choices. Apps started through Finder do not inherit temporary shell environment variables.
 
 Existing weights must be a complete Diffusers directory matching the file manifest, including transformer, text_encoder, vae and tokenizer components. GGUF files, LoRA files and other Qwen Image versions cannot be substituted directly.
 
@@ -82,7 +95,7 @@ Existing weights must be a complete Diffusers directory matching the file manife
 
 Close the app before updating and keep the data directory. On Windows, replace application files while preserving `.venv`, any legacy `runtime` directory, `runtime-path.json` and `settings.local.json`. On Mac, replace the App and keep the data directory. Both platforms remember successful runtime paths in the data directory. A repair activates a separate candidate only after its checks pass; a failed or cancelled repair leaves the current selection intact. Manual checks are also available in Settings.
 
-Removing the application does not erase saved conversations or models. Back up images before deleting the data directory yourself. Mac Python dependencies also live there. Deleting a conversation removes its messages but leaves generated image files on disk.
+Removing the application does not erase saved conversations or models. Back up images before deleting the data directory yourself. Keep or remove any custom model and dependency folders separately. Deleting a conversation removes its messages but leaves generated image files on disk.
 
 ## Verify an archive
 
@@ -90,12 +103,12 @@ Each release includes `SHA256SUMS.txt`. From the download directory:
 
 ```sh
 # Mac
-shasum -a 256 QwenStudio-2.2.3-macos-arm64.zip
+shasum -a 256 QwenStudio-2.2.4-macos-arm64.zip
 ```
 
 ```powershell
 # Windows
-Get-FileHash .\QwenStudio-2.2.3-windows-x64.zip -Algorithm SHA256
+Get-FileHash .\QwenStudio-2.2.4-windows-x64.zip -Algorithm SHA256
 ```
 
 Compare the complete hash with the release checksum file. See the [Usage guide](usage.en.md) for troubleshooting.

@@ -40,14 +40,21 @@ def installation_lock(root):
 
 
 class RuntimeInstaller:
-    def __init__(self,root,data,cuda='cu130',current=None,source='official'):
+    def __init__(self,root,data,cuda='cu130',current=None,source='official',directory=None):
         self.root=Path(root).resolve();self.data=Path(data).resolve()
         if source not in SOURCES:raise ValueError('Unknown dependency source: '+source)
         self.source=source;self.raw_progress=None
+        self.directory=Path(directory).expanduser().absolute() if directory else self.data/'runtime'
+        self.custom_directory=directory is not None;self.installing=False
+        if directory and not self.directory.is_dir():raise ValueError('依赖目录不可用，请连接硬盘或重新选择目录。')
         self.cuda=cuda;self.current=Path(current) if current else runtime_python(self.root,self.data)
 
     def run_command(self,arguments,timeout=1800,capture=False):
         env={k:v for k,v in os.environ.items() if not k.startswith('PIP_') and k not in ('PYTHONPATH','PYTHONHOME')}
+        if self.installing:
+            env['PIP_CACHE_DIR']=str(self.directory/'pip-cache')
+            env['TMPDIR']=env['TEMP']=env['TMP']=str(self.directory/'temporary')
+            Path(env['TMPDIR']).mkdir(parents=True,exist_ok=True)
         env.update(PYTHONUTF8='1',PYTHONUNBUFFERED='1',PIP_NO_INPUT='1',PIP_DISABLE_PIP_VERSION_CHECK='1',PYTHONDONTWRITEBYTECODE='1',PIP_CONFIG_FILE=os.devnull,PIP_INDEX_URL=SOURCES[self.source])
         command=[str(x) for x in arguments]
         if capture:
@@ -115,8 +122,12 @@ class RuntimeInstaller:
             raise RuntimeError('Python dependencies are available. Repair the GPU driver, storage, or system downloader shown in the check page; reinstalling Python packages will not fix these items.')
         if os.environ.get('QWEN_STUDIO_PYTHON'):
             raise RuntimeError('QWEN_STUDIO_PYTHON selects a custom runtime. It has not been changed. Remove that override to let Qwen Studio create a separate repaired runtime.')
-        with installation_lock(self.data/'runtime'):
-            candidate=self.data/'runtime'/('env-'+datetime.now().strftime('%Y%m%d-%H%M%S')+'-'+uuid.uuid4().hex[:8])
+        if not self.custom_directory:self.directory.mkdir(parents=True,exist_ok=True)
+        if not self.directory.is_dir():raise ValueError('依赖目录不可用，请连接硬盘或重新选择目录。')
+        with installation_lock(self.directory):
+            self.installing=True
+            self.data.mkdir(parents=True,exist_ok=True)
+            candidate=self.directory/('env-'+datetime.now().strftime('%Y%m%d-%H%M%S')+'-'+uuid.uuid4().hex[:8])
             emit('prepare')
             print('Preparing a separate runtime: '+str(candidate),flush=True)
             print('Your current environment, models, sessions and images will be kept.',flush=True)
@@ -162,7 +173,7 @@ class RuntimeInstaller:
             if not final.get('ready'):
                 diagnostics='\n'.join(v['title']+': '+v.get('diagnostic',v.get('detail','')) for v in final.get('items',{}).values() if v.get('required',True) and v.get('state')!='pass')
                 raise RuntimeError('The new runtime did not pass validation. The original runtime is still selected.\n'+diagnostics)
-            atomic_json(self.data/'runtime-path.json',{'python':python.relative_to(self.data).as_posix()})
+            atomic_json(self.data/'runtime-path.json',{'python':str(python.absolute())})
             print('Repair complete. The validated runtime is now selected; the previous environment was preserved.',flush=True)
             emit('complete')
             return python
@@ -171,12 +182,13 @@ class RuntimeInstaller:
 if __name__=='__main__':
     parser=argparse.ArgumentParser()
     parser.add_argument('--root',type=Path,default=Path(__file__).resolve().parents[1])
+    parser.add_argument('--directory',type=Path)
     parser.add_argument('--source',choices=SOURCES,default='official')
     parser.add_argument('--cuda',choices=('cu130','cu128'),default='cu130')
     parser.add_argument('--data',type=Path,required=True)
     parser.add_argument('--python',type=Path,default=Path(sys.executable))
     options=parser.parse_args()
-    try:RuntimeInstaller(options.root,options.data,options.cuda,options.python,options.source).repair()
+    try:RuntimeInstaller(options.root,options.data,options.cuda,options.python,options.source,options.directory).repair()
     except Exception as error:
         print('Dependency repair stopped: '+str(error),file=sys.stderr,flush=True)
         sys.exit(1)

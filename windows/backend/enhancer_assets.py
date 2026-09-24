@@ -7,6 +7,8 @@ import subprocess
 import threading
 import time
 from model_sources import SOURCES, validate_source
+from download_control import stop_download
+from storage_locations import model_ready, check_download_parent
 
 TARGETS={'pe-t2i':'Qwen-Image-2.1-PE-T2I','pe-i2i':'Qwen-Image-2.1-PE-I2I'}
 
@@ -14,16 +16,15 @@ def manifest(target):
     if target not in TARGETS:raise ValueError('未知模型。')
     return json.loads(Path(__file__).with_name(target+'-files.json').read_text(encoding='utf-8'))
 
-def ready(root,target):
-    files=manifest(target)
-    return (root/'.verified').is_file() and all((root/f['path']).is_file() and (root/f['path']).stat().st_size==f['size'] for f in files)
+def ready(root,target,data=None):
+    return model_ready(root,target,data)
 
 class EnhancerAssets:
     def __init__(self,model_parent,data):
-        self.parent=Path(model_parent);self.data=Path(data);self.processes={};self.samples={};self.lock=threading.RLock()
+        self.paths={};self.parent=Path(model_parent);self.data=Path(data);self.processes={};self.samples={};self.lock=threading.RLock()
     def path(self,target):
         if target not in TARGETS:raise ValueError('未知模型。')
-        return self.parent/TARGETS[target]
+        return self.paths.get(target,self.parent/TARGETS[target])
     def status(self,target):
         with self.lock:
             root=self.path(target);files=manifest(target);total=sum(f['size'] for f in files)
@@ -37,8 +38,8 @@ class EnhancerAssets:
             current=min(total,done+partial);now=time.monotonic();samples=self.samples.setdefault(target,[]);samples.append((now,current))
             while len(samples)>1 and samples[0][0]<now-15:samples.pop(0)
             elapsed=now-samples[0][0];speed=max(0,(current-samples[0][1])/elapsed) if elapsed>1 else 0
-            is_ready=ready(root,target)
-            return dict(ready=is_ready,bytes=current,total=total,speed=speed,downloading=running,verifying=running and current>=total and not is_ready,error='下载中断，请继续下载。' if not running and process is not None and process.poll() not in (None,0) else '',sources=SOURCES)
+            is_ready=ready(root,target,self.data)
+            return dict(path=str(root),ready=is_ready,bytes=current,total=total,speed=speed,downloading=running,verifying=running and current>=total and not is_ready,error='下载中断，请继续下载。' if not running and process is not None and process.poll() not in (None,0) else '',sources=SOURCES)
     def start(self,target,source):
         validate_source(source)
         with self.lock:
@@ -47,17 +48,9 @@ class EnhancerAssets:
             if current['downloading']:
                 if (self.path(target)/'.download-source').read_text(encoding='utf-8').strip()!=source:raise ValueError('已有下载任务正在运行，请勿同时切换下载源。')
                 return current
-            root=self.path(target);root.mkdir(parents=True,exist_ok=True);self.samples[target]=[];(root/'.download-source').write_text(source, encoding='utf-8')
+            root=self.path(target);check_download_parent(root);self.samples[target]=[];(root/'.download-source').write_text(source, encoding='utf-8')
             with (self.data/(target+'-download.log')).open('a') as log:
                 self.processes[target]=subprocess.Popen([os.sys.executable,'-X','utf8',str(Path(__file__).with_name('download.py')),str(root),source,target],stdout=log,stderr=log,creationflags=getattr(subprocess,'CREATE_NO_WINDOW',0))
             return self.status(target)
     def stop(self):
-        for process in self.processes.values():
-            if process.poll() is None:
-                try:
-                    children=psutil.Process(process.pid).children(recursive=True)
-                    process.terminate()
-                    for child in children:
-                        try:child.terminate()
-                        except psutil.Error:pass
-                except psutil.Error:pass
+        for target in TARGETS:stop_download(self.path(target),self.processes.get(target))

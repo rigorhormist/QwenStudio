@@ -26,4 +26,4 @@ def data_path():
 
 def model_path(data):
     configured=None if os.environ.get('QWEN_STUDIO_DATA') else local_settings().get('model')
-    return Path(os.environ.get('QWEN_STUDIO_MODEL') or configured or data/'models/Qwen-Image-2.1').expanduser()
+    return Path(os.environ.get('QWEN_STUDIO_MODEL') or os.environ.get('QWEN_STUDIO_DEFAULT_MODEL') or configured or data/'models/Qwen-Image-2.1').expanduser()

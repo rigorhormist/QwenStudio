@@ -14,14 +14,14 @@ Qwen Studio 是为解决 Ollama 等平台暂不支持 Qwen Image 2.1 情况的�
 
 ## 下载与开始使用
 
-前往 [Releases](https://github.com/rigorhormist/QwenStudio/releases/latest) 下载 Windows EXE 或 Mac ZIP。首次安装需要联网下载 Python 依赖，模型文件随后在应用中单独下载。
+前往 [Releases](https://github.com/rigorhormist/QwenStudio/releases/latest) 下载 Windows EXE 或 Mac ZIP。首次使用时可选择已有 Python 环境和模型，也可在应用中选择目录后下载缺失文件。
 
 | 平台 | 下载包 | 首次使用 |
 | --- | --- | --- |
-| Windows x64 | [QwenStudio-2.2.3-windows-x64.exe](https://github.com/rigorhormist/QwenStudio/releases/download/v2.2.3/QwenStudio-2.2.3-windows-x64.exe) | 直接打开 EXE，在软件中选择 Python、依赖源并完成环境设置 |
-| Mac Apple Silicon | [QwenStudio-2.2.3-macos-arm64.zip](https://github.com/rigorhormist/QwenStudio/releases/download/v2.2.3/QwenStudio-2.2.3-macos-arm64.zip) | 解压，打开 `Qwen Studio.app`，按环境检测页完成设置 |
+| Windows x64 | [QwenStudio-2.2.4-windows-x64.exe](https://github.com/rigorhormist/QwenStudio/releases/download/v2.2.4/QwenStudio-2.2.4-windows-x64.exe) | 直接打开 EXE，在软件中选择 Python、依赖源并完成环境设置 |
+| Mac Apple Silicon | [QwenStudio-2.2.4-macos-arm64.zip](https://github.com/rigorhormist/QwenStudio/releases/download/v2.2.4/QwenStudio-2.2.4-macos-arm64.zip) | 解压，打开 `Qwen Studio.app`，按环境检测页完成设置 |
 
-安装包包含桌面程序，**不包含 Python、模型权重和 Ollama**。Windows 包自带 .NET 运行时；Mac 的 Python 依赖安装在应用数据目录中，完成安装后可以将 App 移入“应用程序”。当前发布包没有开发者证书签名或 Apple 公证。
+安装包包含桌面程序，**不包含 Python、模型权重和 Ollama**。Windows 包自带 .NET 运行时；两端均可选择 Python 依赖的安装目录，完成安装后可以将 App 移入“应用程序”。当前发布包没有开发者证书签名或 Apple 公证。
 
 完整步骤、校验方法和更新说明见 [安装与下载](docs/installation.zh-CN.md)。通过环境检测后，可以先启动 Ollama 使用普通聊天，无需先下载图像权重。
 
@@ -29,6 +29,7 @@ Qwen Studio 是为解决 Ollama 等平台暂不支持 Qwen Image 2.1 情况的�
 
 - 完整中文、英文与跟随系统，切换语言不改写用户输入或聊天记录。
 - 首次启动及发现依赖缺失时显示环境检测页；通过的项目显示 🎉，必需项通过后进入应用。
+- 自选模型和依赖下载目录，复用已有模型或 Python 环境；支持外置硬盘。
 - 在应用中安装或修复 Python 依赖；缺少 Python、WebView2 或显卡驱动时提供对应入口。
 - 输入提示词生成图片，添加参考图继续编辑；支持透明背景请求。
 - 调整图片尺寸、生成步数和随机种子，包括 2K 尺寸选项。
@@ -66,7 +67,7 @@ Mac 开发环境为 48 GB 统一内存的 Apple M5 Pro。Windows 桌面已可编
 - Mac：`~/Library/Application Support/Qwen Studio`
 - Windows：`%LOCALAPPDATA%\QwenStudio`
 
-会话保存在 SQLite 中，图片放在 `images`，模型默认放在 `models/Qwen-Image-2.1`。Windows 可用 `settings.local.json` 指定其他磁盘；已有配置会保留。应用没有账户系统，也不包含遥测。安装依赖和下载模型会访问相应的软件源；普通聊天连接本机 Ollama。详见 [安全与隐私](SECURITY.md)。
+会话保存在 SQLite 中，图片放在 `images`，模型默认放在 `models/Qwen-Image-2.1`。两个平台都可在界面中选择其他模型和依赖目录；Windows 原有 `settings.local.json` 配置会保留。应用没有账户系统，也不包含遥测。安装依赖和下载模型会访问相应的软件源；普通聊天连接本机 Ollama。详见 [安全与隐私](SECURITY.md)。
 
 ## 从源码构建
 

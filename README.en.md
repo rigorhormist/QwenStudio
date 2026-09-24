@@ -14,16 +14,18 @@ Generate and edit images in a local desktop window, then use your existing Ollam
 
 ## Download and get started
 
-Download the EXE for Windows or the ZIP for Mac from [Releases](https://github.com/rigorhormist/QwenStudio/releases/latest). First-time setup downloads Python dependencies. Choose a source and download model weights separately inside the app.
+Download the EXE for Windows or the ZIP for Mac from [Releases](https://github.com/rigorhormist/QwenStudio/releases/latest). Use existing Python environments and model files, or choose folders and download missing files inside the app.
 
 | Platform | Package | First launch |
 | --- | --- | --- |
-| Windows x64 | [QwenStudio-2.2.3-windows-x64.exe](https://github.com/rigorhormist/QwenStudio/releases/download/v2.2.3/QwenStudio-2.2.3-windows-x64.exe) | Open the EXE, choose Python and a dependency source, then complete setup inside the app |
-| Mac Apple Silicon | [QwenStudio-2.2.3-macos-arm64.zip](https://github.com/rigorhormist/QwenStudio/releases/download/v2.2.3/QwenStudio-2.2.3-macos-arm64.zip) | Extract, open `Qwen Studio.app`, and follow the environment check |
+| Windows x64 | [QwenStudio-2.2.4-windows-x64.exe](https://github.com/rigorhormist/QwenStudio/releases/download/v2.2.4/QwenStudio-2.2.4-windows-x64.exe) | Open the EXE, choose Python and a dependency source, then complete setup inside the app |
+| Mac Apple Silicon | [QwenStudio-2.2.4-macos-arm64.zip](https://github.com/rigorhormist/QwenStudio/releases/download/v2.2.4/QwenStudio-2.2.4-macos-arm64.zip) | Extract, open `Qwen Studio.app`, and follow the environment check |
 
-Packages include the desktop application but **exclude Python, model weights and Ollama**. The Windows package includes the .NET runtime. Mac Python dependencies live in the application data directory, so the App can move to Applications after setup. These releases are not developer-signed or Apple-notarized.
+Packages include the desktop application but **exclude Python, model weights and Ollama**. The Windows package includes the .NET runtime. Both platforms allow custom dependency folders; the Mac App can move to Applications after setup. These releases are not developer-signed or Apple-notarized.
 
 See [Installation and downloads](docs/installation.en.md) for prerequisites, checksum verification and updates. After required environment checks pass, you can use Ollama chat before downloading image weights.
+
+Choose model folders in Settings and a dependency folder on the environment check page. Existing model files and Python environments can be used in place, including on external drives.
 
 ## Features
 

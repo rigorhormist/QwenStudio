@@ -12,3 +12,5 @@
 #cuda-choice{margin-top:18px}
 
 .installation{scroll-margin-bottom:180px}
+
+.dependency-directory{grid-column:1/-1}.directory-actions{display:flex;gap:10px;flex-wrap:wrap;margin-top:10px}.directory-actions button,.dependency-directory button{font-size:12px;padding:9px 14px}.dependency-directory p{margin:8px 0 12px}#dependency-directory{color:#515151;user-select:text}

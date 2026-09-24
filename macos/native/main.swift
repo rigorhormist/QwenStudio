@@ -14,8 +14,34 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
     var backendPython: String?
     var pythonCandidates: [[String:Any]] = []
     var dependencySource = "official"
+    var dependencyDirectory:String {
+        if let value=try? String(contentsOf:dataURL.appendingPathComponent("environment-directory.txt"),encoding:.utf8).trimmingCharacters(in:.whitespacesAndNewlines),value.hasPrefix("/"){return value}
+        return dataURL.appendingPathComponent("runtime").path
+    }
+    func chooseEnvironmentDirectory(existing:Bool){
+        guard !environmentBusy && !pythonLocked else{return}
+        let panel=NSOpenPanel();panel.title=t(existing ? "选择已有 Python 环境":"选择依赖下载目录");panel.canChooseDirectories=true;panel.canChooseFiles=false;panel.canCreateDirectories = !existing;panel.allowsMultipleSelection=false;panel.showsHiddenFiles=true
+        panel.beginSheetModal(for:window){response in
+            guard response == .OK,let folder=panel.url else{return}
+            if !existing {
+                do{try Data(folder.path.utf8).write(to:self.dataURL.appendingPathComponent("environment-directory.txt"),options:.atomic);self.sendEnvironmentChoices()}catch{self.sendEnvironment(["message":"目录设置无法保存，请检查权限。"])}
+                return
+            }
+            var candidates:[String]=[]
+            if let bytes=try? Data(contentsOf:folder.appendingPathComponent("runtime-path.json")),let object=(try? JSONSerialization.jsonObject(with:bytes)) as? [String:String],let path=object["python"]{candidates.append(path.hasPrefix("/") ? path:folder.appendingPathComponent(path).path)}
+            candidates += ["bin/python3","bin/python",".venv/bin/python3","venv/bin/python3","runtime/bin/python3"].map{folder.appendingPathComponent($0).path}
+            if !candidates.contains(where:{FileManager.default.isExecutableFile(atPath:$0)}){
+                let children=(try? FileManager.default.contentsOfDirectory(at:folder,includingPropertiesForKeys:nil)) ?? []
+                let managed=children.filter{$0.lastPathComponent.hasPrefix("env-")}.map{$0.appendingPathComponent("bin/python3").path}.filter{FileManager.default.isExecutableFile(atPath:$0)}
+                if managed.count>1{self.sendEnvironment(["message":"找到多个环境，请选择具体的 env 子目录。"]);return}
+                candidates += managed
+            }
+            guard let path=candidates.first(where:{FileManager.default.isExecutableFile(atPath:$0)}) else{self.sendEnvironment(["message":"目录中未找到 Python。请选择环境根目录，或直接选择解释器文件。"]);return}
+            self.requestedPython=path;self.manualCheck=true;self.checkEnvironment()
+        }
+    }
     var pythonLocked: Bool { ProcessInfo.processInfo.environment["QWEN_STUDIO_PYTHON"] != nil }
-    func sendEnvironmentChoices(){sendEnvironment(["pythonCandidates":pythonCandidates,"selectedPython":detectedPython ?? requestedPython ?? "","pythonLocked":pythonLocked,"dependencySource":dependencySource,"canInstall":detectedPython != nil && !pythonLocked])}
+    func sendEnvironmentChoices(){sendEnvironment(["pythonCandidates":pythonCandidates,"selectedPython":detectedPython ?? requestedPython ?? "","pythonLocked":pythonLocked,"dependencySource":dependencySource,"dependencyDirectory":dependencyDirectory,"canInstall":detectedPython != nil && !pythonLocked])}
     func saveDependencySource(_ source:String){guard ["official","tuna"].contains(source) else{return};dependencySource=source;do{try Data(source.utf8).write(to:dataURL.appendingPathComponent("environment-source.txt"),options:.atomic)}catch{logEnvironment(error.localizedDescription)}}
     var environmentBusy = false
     var environmentReady = false
@@ -84,7 +110,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
         for (title,action,key) in [("撤销","undo:","z"),("剪切","cut:","x"),("复制","copy:","c"),("粘贴","paste:","v"),("全选","selectAll:","a")] { edit.addItem(withTitle:t(title),action:Selector(action),keyEquivalent:key) }
         NSApp.mainMenu=menu
     }
-    @objc func about() { let a=NSAlert();a.messageText="Qwen Studio";a.informativeText=t("本地图像与对话工作室")+"\nQwen-Image-2.1 / Diffusers / Ollama\n"+t("版本")+" 2.2.3";a.addButton(withTitle:t("确定"));a.runModal() }
+    @objc func about() { let a=NSAlert();a.messageText="Qwen Studio";a.informativeText=t("本地图像与对话工作室")+"\nQwen-Image-2.1 / Diffusers / Ollama\n"+t("版本")+" 2.2.4";a.addButton(withTitle:t("确定"));a.runModal() }
     @objc func settings(){web.evaluateJavaScript("window.studioAction?.('settings')")}
     @objc func newSession(){web.evaluateJavaScript("window.studioAction?.('new')")}
     @objc func toggleSidebar(){web.evaluateJavaScript("window.studioAction?.('sidebar')")}
@@ -206,6 +232,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
         if environmentReady && !manualCheck && FileManager.default.fileExists(atPath:dataURL.appendingPathComponent("environment-v1.ready").path) {openStudio()}
     }
     func installEnvironment() {
+        if dependencyDirectory==dataURL.appendingPathComponent("runtime").path{try? FileManager.default.createDirectory(atPath:dependencyDirectory,withIntermediateDirectories:true)}
         guard !environmentBusy else{return}
         if environmentReady{sendEnvironment(["busy":false,"ready":true,"message":"环境正常，无需重新安装。"]);return}
         guard detectedPython != nil && !pythonLocked else{sendEnvironment(["message":"请先选择可用的 Python 解释器。"]);return}
@@ -213,7 +240,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
         sendEnvironment(["busy":true,"ready":false,"canCancel":true,"message":"正在安装依赖…"])
         DispatchQueue.global().async { [weak self] in
             guard let self=self else{return}
-            let code=self.run(self.python,["-X","utf8",self.resources.appendingPathComponent("backend/runtime_setup.py").path,"--root",self.resources.path,"--data",self.dataURL.path,"--python",self.python,"--source",self.dependencySource],timeout:7200) {line in
+            let code=self.run(self.python,["-X","utf8",self.resources.appendingPathComponent("backend/runtime_setup.py").path,"--root",self.resources.path,"--data",self.dataURL.path,"--python",self.python,"--source",self.dependencySource,"--directory",self.dependencyDirectory],timeout:7200) {line in
                 if let bytes=line.data(using:.utf8),let progress=(try? JSONSerialization.jsonObject(with:bytes)) as? [String:Any],progress["type"] as? String == "install_progress" {DispatchQueue.main.async{self.sendEnvironment(["progress":progress])}}
                 else{DispatchQueue.main.async{self.sendEnvironment(["log":line])}}
             }
@@ -299,6 +326,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
         if isEnvironment {
             if action=="environmentReady" {if environmentBusy{sendEnvironment(["busy":true,"ready":false,"canCancel":true,"language":language,"platform":"macos","message":"正在检测…"]);sendEnvironmentChoices();for item in checks.values{sendEnvironment(["item":item])}}else{checkEnvironment()}}
             if action=="environmentCancel" {environmentCancelled=true;manualCheck=true;sendEnvironment(["message":"正在停止…","canCancel":false]);if let process=environmentProcess{Self.stopTree(process)}}
+            if action=="environmentDirectory"{chooseEnvironmentDirectory(existing:false)}
+            if action=="environmentExisting"{chooseEnvironmentDirectory(existing:true)}
             if action=="environmentSource",!environmentBusy,let source=p["source"] as? String {saveDependencySource(source);sendEnvironmentChoices()}
             if action=="environmentPython",!environmentBusy,!pythonLocked,let selected=p["python"] as? String,pythonCandidates.contains(where:{$0["executable"] as? String == selected}){requestedPython=selected;manualCheck=true;checkEnvironment()}
             if action=="environmentBrowse",!environmentBusy,!pythonLocked {
@@ -312,6 +341,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
             return
         }
         if action=="checkEnvironment" {showEnvironment(manual:true);return}
+        if action=="chooseModelDirectory",let target=p["target"] as? String,let kind=p["kind"] as? String,["image","pe-t2i","pe-i2i"].contains(target),["download","existing"].contains(kind){
+            let panel=NSOpenPanel();panel.title=t(kind=="existing" ? "选择已有模型目录":"选择模型下载目录");panel.canChooseDirectories=true;panel.canChooseFiles=false;panel.canCreateDirectories=kind=="download";panel.allowsMultipleSelection=false;panel.showsHiddenFiles=true
+            panel.beginSheetModal(for:window){response in
+                let result:[String:Any] = ["target":target,"kind":kind,"folder":response == .OK ? (panel.url?.path as Any? ?? NSNull()):NSNull()]
+                if let bytes=try? JSONSerialization.data(withJSONObject:result),let json=String(data:bytes,encoding:.utf8){self.web.evaluateJavaScript("window.studioDirectorySelected?.("+json+")",completionHandler:nil)}
+            };return
+        }
         if action=="revealData"{NSWorkspace.shared.open(dataURL)}
         if action=="sidebarState",let collapsed=p["collapsed"] as? Bool { sidebarButton.toolTip=t(collapsed ? "展开侧栏" : "收起侧栏");sidebarButton.setAccessibilityLabel(sidebarButton.toolTip) }
         if action=="saveImage",let name=p["name"] as? String,name==URL(fileURLWithPath:name).lastPathComponent {

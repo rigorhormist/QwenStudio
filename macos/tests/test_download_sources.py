@@ -17,6 +17,7 @@ class DownloadSourceTest(unittest.TestCase):
     try:
      with urllib.request.urlopen(req) as response:return response.status,json.load(response)
     except urllib.error.HTTPError as error:return error.code,json.load(error)
+   s.MODEL.mkdir(parents=True,exist_ok=True)
    partial=s.MODEL/'model_index.json.part';partial.write_bytes(b'resume-me')
    try:
     with patch.object(s.subprocess,'Popen') as launch:

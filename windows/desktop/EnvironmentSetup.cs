@@ -20,8 +20,29 @@ internal sealed partial class StudioWindow
     string dependencySource="official",cudaVersion="cu130";
     JsonElement pythonCandidates=JsonSerializer.SerializeToElement(Array.Empty<object>());
     bool PythonLocked => !string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable("QWEN_STUDIO_PYTHON"));
-    Task SendEnvironmentChoices()=>SendEnvironment(new{pythonCandidates,selectedPython=detectedPython??requestedPython??"",pythonLocked=PythonLocked,dependencySource,cudaVersion,canInstall=detectedPython!=null&&!PythonLocked});
+    Task SendEnvironmentChoices()=>SendEnvironment(new{pythonCandidates,selectedPython=detectedPython??requestedPython??"",pythonLocked=PythonLocked,dependencyDirectory=DependencyDirectory,dependencySource,cudaVersion,canInstall=detectedPython!=null&&!PythonLocked});
     void SaveDependencySource(string value){if(!new[]{"official","tuna"}.Contains(value))return;dependencySource=value;try{File.WriteAllText(Path.Combine(data,"environment-source.txt"),value);}catch(Exception e){Log(e.Message);}}
+
+    string DependencyDirectory { get {try {var value=File.ReadAllText(Path.Combine(data,"environment-directory.txt")).Trim();if(Path.IsPathFullyQualified(value))return value;}catch{}return Path.Combine(data,"runtime");} }
+    async Task ChooseEnvironmentDirectory(bool existing)
+    {
+        if(environmentBusy||PythonLocked)return;
+        using var dialog=new FolderBrowserDialog{Description=T(existing?"选择已有 Python 环境":"选择依赖下载目录"),UseDescriptionForTitle=true,ShowNewFolderButton=!existing};
+        if(dialog.ShowDialog(this)!=DialogResult.OK)return;
+        if(!existing){File.WriteAllText(Path.Combine(data,"environment-directory.txt"),dialog.SelectedPath,new UTF8Encoding(false));await SendEnvironmentChoices();return;}
+        var folder=dialog.SelectedPath;
+        var candidates=new List<string>();
+        try{using var json=JsonDocument.Parse(File.ReadAllText(Path.Combine(folder,"runtime-path.json")));var value=json.RootElement.GetProperty("python").GetString();if(value!=null)candidates.Add(Path.GetFullPath(value,folder));}catch{}
+        candidates.AddRange(new[]{"Scripts/python.exe","python.exe",".venv/Scripts/python.exe","venv/Scripts/python.exe","runtime/Scripts/python.exe"}.Select(value=>Path.Combine(folder,value)));
+        var found=candidates.FirstOrDefault(File.Exists);
+        if(found==null){
+            var managed=Directory.EnumerateDirectories(folder,"env-*").Select(value=>Path.Combine(value,"Scripts","python.exe")).Where(File.Exists).ToArray();
+            if(managed.Length==1)found=managed[0];
+            else if(managed.Length>1){await SendEnvironment(new{message="找到多个环境，请选择具体的 env 子目录。"});return;}
+        }
+        if(found==null){await SendEnvironment(new{message="目录中未找到 Python。请选择环境根目录，或直接选择解释器文件。"});return;}
+        requestedPython=found;manualCheck=true;await CheckEnvironment();
+    }
 
     string Python => detectedPython ?? Environment.GetEnvironmentVariable("QWEN_STUDIO_PYTHON") ?? Path.Combine(root,".venv","Scripts","python.exe");
     bool English => language=="en" || (language=="auto"&&!CultureInfo.CurrentUICulture.Name.StartsWith("zh",StringComparison.OrdinalIgnoreCase));
@@ -108,6 +129,8 @@ internal sealed partial class StudioWindow
                 using var dialog=new OpenFileDialog{Title=T("选择 Python 解释器"),Filter="Python (*.exe)|*.exe",CheckFileExists=true};
                 if(dialog.ShowDialog(this)==DialogResult.OK){requestedPython=dialog.FileName;manualCheck=true;await CheckEnvironment();}
             }
+            if(action=="environmentDirectory")await ChooseEnvironmentDirectory(false);
+            if(action=="environmentExisting")await ChooseEnvironmentDirectory(true);
             if(action=="environmentSource"&&!environmentBusy){SaveDependencySource(payload.GetProperty("source").GetString()??"official");if(payload.TryGetProperty("cuda",out var cuda)&&new[]{"cu130","cu128"}.Contains(cuda.GetString())){cudaVersion=cuda.GetString()!;File.WriteAllText(Path.Combine(data,"environment-cuda.txt"),cudaVersion);}await SendEnvironmentChoices();}
             if(action=="environmentCheck"){manualCheck=true;await CheckEnvironment();}
             if(action=="environmentInstall")await InstallEnvironment();
@@ -215,11 +238,12 @@ internal sealed partial class StudioWindow
         if(environmentBusy)return;
         if(environmentReady){await SendEnvironment(new{busy=false,ready=true,message="环境正常，无需重新安装。"});return;}
         if(detectedPython==null||PythonLocked){await SendEnvironment(new{message="请先选择可用的 Python 解释器。"});return;}
+        if(DependencyDirectory==Path.Combine(data,"runtime"))Directory.CreateDirectory(DependencyDirectory);
         environmentBusy=true;environmentReady=false;manualCheck=true;
         environmentOperation?.Dispose();environmentOperation=new();
         await SendEnvironment(new{busy=true,ready=false,canCancel=true,message="正在安装依赖…"});
         Log("Dependency repair started. Existing runtime will be preserved.");
-        var code=await Run(Python,["-X","utf8",Path.Combine(root,"backend","runtime_setup.py"),"--root",root,"--data",data,"--python",Python,"--source",dependencySource,"--cuda",cudaVersion],7200,line=>{
+        var code=await Run(Python,["-X","utf8",Path.Combine(root,"backend","runtime_setup.py"),"--root",root,"--data",data,"--python",Python,"--source",dependencySource,"--cuda",cudaVersion,"--directory",DependencyDirectory],7200,line=>{
             try{using var json=JsonDocument.Parse(line);if(json.RootElement.TryGetProperty("type",out var type)&&type.GetString()=="install_progress"){_ = SendEnvironment(new{progress=json.RootElement.Clone()});return;}}catch{}
             _ = SendEnvironment(new{log=line});
         });
@@ -235,7 +259,7 @@ internal sealed partial class StudioWindow
         try{
             var start=new ProcessStartInfo(Python){WorkingDirectory=root,UseShellExecute=false,CreateNoWindow=true,RedirectStandardOutput=true,RedirectStandardError=true,StandardOutputEncoding=Encoding.UTF8,StandardErrorEncoding=Encoding.UTF8};
             foreach(var argument in new[]{"-X","utf8",Path.Combine(root,"backend","server.py")})start.ArgumentList.Add(argument);
-            var model=Environment.GetEnvironmentVariable("QWEN_STUDIO_MODEL")??LocalSetting("model");if(!string.IsNullOrWhiteSpace(model))start.Environment["QWEN_STUDIO_MODEL"]=model;
+            var model=LocalSetting("model");if(!string.IsNullOrWhiteSpace(model))start.Environment["QWEN_STUDIO_DEFAULT_MODEL"]=model;
             start.Environment["PYTHONUTF8"]="1";start.Environment["PYTHONUNBUFFERED"]="1";start.Environment["QWEN_STUDIO_LAUNCH_DIR"]=AppContext.BaseDirectory;start.Environment["QWEN_STUDIO_DATA"]=data;start.Environment["QWEN_STUDIO_TOKEN"]=token;start.Environment["NO_PROXY"]="127.0.0.1,localhost";
             var process=new Process{StartInfo=start,EnableRaisingEvents=true};backend=process;backendPython=Python;
             process.ErrorDataReceived+=(_,e)=>{if(e.Data!=null)Log(e.Data);};

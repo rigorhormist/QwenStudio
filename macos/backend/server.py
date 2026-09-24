@@ -9,11 +9,13 @@ from environment_probe import is_environment_error
 from enhancer_assets import EnhancerAssets, TARGETS
 from generation_options import validate_options, resolve_size, exact_text, protect_text
 from image_jobs import run_image_job
+from download_control import stop_download
+from storage_locations import ModelLocations, model_ready, check_download_parent, BUSY
 
 ROOT = Path(__file__).resolve().parent.parent
 DATA = Path(os.environ.get('QWEN_STUDIO_DATA', str(Path.home() / 'Library/Application Support/Qwen Studio')))
 MODEL = DATA / 'models/Qwen-Image-2.1'
-for p in [DATA, DATA/'images', DATA/'jobs', MODEL]: p.mkdir(parents=True, exist_ok=True)
+for p in [DATA, DATA/'images', DATA/'jobs', DATA/'models']: p.mkdir(parents=True, exist_ok=True)
 TOKEN = os.environ.get('QWEN_STUDIO_TOKEN') or secrets.token_urlsafe(32)
 DB = DATA/'sessions.sqlite3'
 LOCK = threading.RLock()
@@ -24,7 +26,19 @@ ACTIVE = None
 QUEUE = []
 STOPPING = False
 DOWNLOAD = None
+LOCATIONS = ModelLocations(DATA, MODEL, LOCK)
+MODEL = LOCATIONS.paths["image"]
 ENHANCERS = EnhancerAssets(MODEL.parent, DATA)
+ENHANCERS.paths = {key:LOCATIONS.paths[key] for key in TARGETS}
+
+def activate_location(target,path):
+    global MODEL, DOWNLOAD
+    if target=="image":MODEL=path;DOWNLOAD=None;DOWNLOAD_SAMPLES.clear()
+    else:ENHANCERS.paths[target]=path;ENHANCERS.samples.pop(target,None);ENHANCERS.processes.pop(target,None)
+
+def storage_busy():
+    return bool(ACTIVE or QUEUE or LOCATIONS.operation.get("busy") or model_status()["downloading"] or any(ENHANCERS.status(key)["downloading"] for key in TARGETS))
+
 REVISION = 'b3179ad355be050328e483a9dfdd9e60cd62adfa'
 
 def connection():
@@ -106,7 +120,7 @@ def model_status():
     total=sum(x['size'] for x in files)
     done=sum(min((MODEL/x['path']).stat().st_size,x['size']) for x in files if (MODEL/x['path']).is_file())
     partial=sum(x.stat().st_size for x in MODEL.rglob('*') if x.is_file() and (x.name.endswith('.part') or '.chunk-' in x.name or x.name.endswith('.receiving')))
-    ready=(MODEL/'.verified').is_file() and all((MODEL/x['path']).is_file() and (MODEL/x['path']).stat().st_size==x['size'] for x in files)
+    ready=model_ready(MODEL,'image',DATA)
     running=DOWNLOAD is not None and DOWNLOAD.poll() is None
     try:
         pid=int((MODEL/'.download.pid').read_text(encoding='utf-8'));os.kill(pid,0);running=True
@@ -123,6 +137,7 @@ def model_status():
         elapsed=now-DOWNLOAD_SAMPLES[0][0]
         speed=max(0,(current-DOWNLOAD_SAMPLES[0][1])/elapsed) if elapsed>1 else 0
     eta=(total-current)/speed if speed>1024 and not ready else None
+    if not MODEL.parent.is_dir():error='下载目录不可用，请连接硬盘或重新选择目录。'
     source=preferences()['download_source']
     if running:
         try: source=validate_source((MODEL/'.download-source').read_text(encoding='utf-8').strip())
@@ -149,7 +164,7 @@ def status():
         connected=True
     except Exception: models=[];connected=False
     with LOCK: active=JOBS.get(ACTIVE)
-    return {'model':model_status(),'enhancers':{key:ENHANCERS.status(key) for key in TARGETS},'ollama':connected,'chat_models':models,'chat_capabilities':{name:chat_capabilities(name) for name in models},'active':active,'pending':[JOBS[jid] for jid,_ in QUEUE],'data':str(DATA)}
+    return {'storage':LOCATIONS.status(),'model':model_status(),'enhancers':{key:ENHANCERS.status(key) for key in TARGETS},'ollama':connected,'chat_models':models,'chat_capabilities':{name:chat_capabilities(name) for name in models},'active':active,'pending':[JOBS[jid] for jid,_ in QUEUE],'data':str(DATA)}
 
 def run_job(job, payload):
     global ACTIVE
@@ -229,6 +244,11 @@ def cancel_job(jid):
         elif job['state']=='running':job.update(cancel=True,stage='正在停止')
 
 def start_job(p):
+    with LOCK:
+        if LOCATIONS.operation.get("busy"):raise ValueError("正在检查已有模型，请等待检查完成。")
+        return _start_job(p)
+
+def _start_job(p):
     global ACTIVE
     prompt=str(p.get('prompt','')).strip()
     if not prompt or len(prompt)>16000: raise ValueError('请输入 1–16000 字的内容。')
@@ -359,8 +379,24 @@ class Handler(BaseHTTPRequestHandler):
             if path=='/api/cancel':
                 cancel_job(p['id'])
                 return self.send_json({'ok':True})
+            if path=='/api/model/location/cancel':
+                LOCATIONS.cancelled.set()
+                return self.send_json({'ok':True})
+            if path=='/api/model/location':
+                with LOCK:
+                    if storage_busy():raise ValueError(BUSY)
+                    LOCATIONS.select(p.get('target','image'),p['folder'],p['kind'],activate_location)
+                    return self.send_json(LOCATIONS.status())
+            if path=='/api/model/download/cancel':
+                with LOCK:
+                    target=p.get('target','image')
+                    if target=='image':stop_download(MODEL,DOWNLOAD);DOWNLOAD=None
+                    else:stop_download(ENHANCERS.path(target),ENHANCERS.processes.get(target));ENHANCERS.processes.pop(target,None)
+                    return self.send_json({'ok':True})
             if path=='/api/model/download':
                 with LOCK:
+                    if LOCATIONS.error:raise ValueError(LOCATIONS.error)
+                    if LOCATIONS.operation.get('busy'):raise ValueError('正在检查已有模型，请等待检查完成。')
                     target=p.get('target','image')
                     if target!='image':
                         source=validate_source(p.get('source') or preferences()['download_source'])
@@ -374,6 +410,7 @@ class Handler(BaseHTTPRequestHandler):
                         if source!=current['source']: raise ValueError('已有下载任务正在运行，请勿同时切换下载源。')
                     else:
                         preferences({'download_source':source})
+                        check_download_parent(MODEL)
                         DOWNLOAD_SAMPLES.clear()
                         (MODEL/'.download-source').write_text(source, encoding='utf-8')
                         log=(DATA/'download.log').open('a')

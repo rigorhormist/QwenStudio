@@ -128,6 +128,13 @@ internal sealed partial class StudioWindow : Form
             if(action=="languageChanged") {SaveLanguage(p.GetProperty("language").GetString()??"auto");return;}
             if(environmentPage){HandleEnvironmentAction(action,p);return;}
             if(action=="checkEnvironment"){ShowEnvironment(true);return;}
+            if(action=="chooseModelDirectory"){
+                var target=p.GetProperty("target").GetString();var kind=p.GetProperty("kind").GetString();
+                if(!new[]{"image","pe-t2i","pe-i2i"}.Contains(target)||!new[]{"download","existing"}.Contains(kind))return;
+                using var dialog=new FolderBrowserDialog{Description=T(kind=="existing"?"选择已有模型目录":"选择模型下载目录"),UseDescriptionForTitle=true,ShowNewFolderButton=kind=="download"};
+                var selected=dialog.ShowDialog(this)==DialogResult.OK?dialog.SelectedPath:null;
+                _ = Script("window.studioDirectorySelected?.("+JsonSerializer.Serialize(new{target,kind,folder=selected})+")");return;
+            }
             if(action=="revealData")Process.Start(new ProcessStartInfo(data){UseShellExecute=true});
             if(action=="sidebarState")titlebar.SetSidebarCollapsed(p.GetProperty("collapsed").GetBoolean());
             if(action=="saveImage"){
