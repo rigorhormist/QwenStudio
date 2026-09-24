@@ -22,5 +22,8 @@ class UpgradeLocations(unittest.TestCase):
                 os.environ['QWEN_STUDIO_DATA']=str(base/'isolated')
                 self.assertEqual(studio_paths.model_path(studio_paths.data_path()),base/'isolated/models/Qwen-Image-2.1')
                 del os.environ['QWEN_STUDIO_DATA']
+                (app/'settings.local.json').write_text(json.dumps(saved))
+                (settings/'locations.json').write_text('{old broken profile')
+                self.assertEqual(studio_paths.data_path(),Path(saved['data']))
                 (app/'settings.local.json').write_text('{broken')
                 with self.assertRaises(ValueError):studio_paths.data_path()
