@@ -8,8 +8,11 @@ using Microsoft.Web.WebView2.WinForms;
 internal static class Program
 {
     [STAThread]
-    static void Main()
+    static void Main(string[] args)
     {
+        if(args.SequenceEqual(new[]{"--check-resources"})){
+            try{ResourceBundle.Unpack();Environment.ExitCode=0;}catch{Environment.ExitCode=1;}return;
+        }
         var customData=Environment.GetEnvironmentVariable("QWEN_STUDIO_DATA");
         var instance=customData==null?"":Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(Encoding.UTF8.GetBytes(Path.GetFullPath(customData).ToUpperInvariant())))[..16];
         using var single = new Mutex(true, "Local\\QwenStudioWindowsDesktop"+instance, out bool first);
@@ -19,7 +22,8 @@ internal static class Program
             return;
         }
         ApplicationConfiguration.Initialize();
-        Application.Run(new StudioWindow());
+        try{Application.Run(new StudioWindow());}
+        catch(Exception error){var zh=System.Globalization.CultureInfo.CurrentUICulture.Name.StartsWith("zh");MessageBox.Show((zh?"无法展开应用资源。请检查磁盘空间和本地目录权限。\n\n":"Could not prepare application resources. Check free disk space and local folder permissions.\n\n")+error.Message,"Qwen Studio",MessageBoxButtons.OK,MessageBoxIcon.Error);}
     }
     [DllImport("user32.dll")] static extern bool SetForegroundWindow(IntPtr h);
     [DllImport("user32.dll")] static extern bool ShowWindow(IntPtr h, int n);
@@ -73,7 +77,7 @@ internal sealed partial class StudioWindow : Form
 
     string? LocalSetting(string key)
     {
-        var files=new[]{Path.Combine(root,"settings.local.json"),Path.Combine(DefaultData,"locations.json")};
+        var launch=AppContext.BaseDirectory;var files=new[]{Path.Combine(launch,"settings.local.json"),Path.Combine(Directory.GetParent(launch.TrimEnd(Path.DirectorySeparatorChar))?.FullName??launch,"settings.local.json"),Path.Combine(root,"settings.local.json"),Path.Combine(DefaultData,"locations.json")}.Distinct();
         foreach(var file in files){
             if(!File.Exists(file))continue;
             try{
@@ -103,12 +107,7 @@ internal sealed partial class StudioWindow : Form
 
     static string FindRoot()
     {
-        var directory = new DirectoryInfo(AppContext.BaseDirectory);
-        while (directory != null) {
-            if (File.Exists(Path.Combine(directory.FullName,"backend","server.py"))) return directory.FullName;
-            directory=directory.Parent;
-        }
-        throw new DirectoryNotFoundException("找不到 Qwen Studio/backend/server.py，请保留应用目录结构。");
+        return ResourceBundle.Unpack();
     }
 
     internal void ToggleMaximize() => WindowState=WindowState==FormWindowState.Maximized?FormWindowState.Normal:FormWindowState.Maximized;

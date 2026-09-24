@@ -14,12 +14,12 @@ Generate and edit images in a local desktop window, then use your existing Ollam
 
 ## Download and get started
 
-Download the ZIP for your platform from [Releases](https://github.com/rigorhormist/QwenStudio/releases/latest). First-time setup downloads Python dependencies. Choose a source and download model weights separately inside the app.
+Download the EXE for Windows or the ZIP for Mac from [Releases](https://github.com/rigorhormist/QwenStudio/releases/latest). First-time setup downloads Python dependencies. Choose a source and download model weights separately inside the app.
 
 | Platform | Package | First launch |
 | --- | --- | --- |
-| Windows x64 | [QwenStudio-2.2.2-windows-x64.zip](https://github.com/rigorhormist/QwenStudio/releases/download/v2.2.2/QwenStudio-2.2.2-windows-x64.zip) | Extract, open `start.cmd`, and follow the in-app environment check |
-| Mac Apple Silicon | [QwenStudio-2.2.2-macos-arm64.zip](https://github.com/rigorhormist/QwenStudio/releases/download/v2.2.2/QwenStudio-2.2.2-macos-arm64.zip) | Extract, open `Qwen Studio.app`, and follow the environment check |
+| Windows x64 | [QwenStudio-2.2.3-windows-x64.exe](https://github.com/rigorhormist/QwenStudio/releases/download/v2.2.3/QwenStudio-2.2.3-windows-x64.exe) | Open the EXE, choose Python and a dependency source, then complete setup inside the app |
+| Mac Apple Silicon | [QwenStudio-2.2.3-macos-arm64.zip](https://github.com/rigorhormist/QwenStudio/releases/download/v2.2.3/QwenStudio-2.2.3-macos-arm64.zip) | Extract, open `Qwen Studio.app`, and follow the environment check |
 
 Packages include the desktop application but **exclude Python, model weights and Ollama**. The Windows package includes the .NET runtime. Mac Python dependencies live in the application data directory, so the App can move to Applications after setup. These releases are not developer-signed or Apple-notarized.
 
@@ -77,7 +77,7 @@ git clone https://github.com/rigorhormist/QwenStudio.git
 cd QwenStudio
 ```
 
-Mac builds require Xcode Command Line Tools. Run `./build.sh` and `./setup.command` in `macos`. Windows builds require the .NET 10 SDK. Run `build.ps1` and `setup.cmd` in `windows`. Building the desktop shell does not require model weights.
+Mac builds require Xcode Command Line Tools. Run `./build.sh` and `./setup.command` in `macos`. Windows builds require the .NET 10 SDK. Run `build.ps1` in `windows` to build `app/Qwen Studio.exe`. Dependency setup is handled inside the app. Building the desktop shell does not require model weights.
 
 ```text
 macos/       AppKit shell, MPS backend and web interface

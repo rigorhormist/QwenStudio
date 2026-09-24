@@ -1,5 +1,13 @@
 # Changelog
 
+## 2.2.3 (2026-09-24)
+
+- Windows ships as a standalone EXE with embedded application resources and in-app dependency repair.
+- Both platforms support Python interpreter selection, manual browsing, dependency-source selection and live installation progress.
+- Windows CUDA version selection moves into the environment page. Healthy runtimes and existing user data are preserved.
+
+Windows 无需外部 setup/start 脚本；两端均支持多 Python 选择、依赖换源和下载进度。详见 [2.2.3 发布说明](docs/releases/v2.2.3.md)。
+
 ## 2.2.2 (2026-09-24)
 
 - Made PE-T2I and PE-I2I optional, with a bilingual reminder, direct generation, and a documented fallback if enhancement fails.

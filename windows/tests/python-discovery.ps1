@@ -61,3 +61,19 @@ try {
     if (Test-Path -LiteralPath $registry) { Remove-Item -LiteralPath $registry -Recurse -Force }
     if (Test-Path -LiteralPath $temp) { Remove-Item -LiteralPath $temp -Recurse -Force }
 }
+
+# Enumerate all installations instead of stopping at the first compatible one.
+function Test-StudioPython([string]$Executable) {
+    if ($Executable -eq 'C:\Python311\python.exe') { return [pscustomobject]@{executable=$Executable;version='3.11.9';bits=64;virtual=$false;compatible=$true} }
+    if ($Executable -eq 'D:\Space Folder\venv\Scripts\python.exe') { return [pscustomobject]@{executable=$Executable;version='3.12.8';bits=64;virtual=$true;compatible=$true} }
+    if ($Executable -eq 'C:\Python39\python.exe') { return [pscustomobject]@{executable=$Executable;version='3.9.0';bits=64;virtual=$false;compatible=$false} }
+    return $null
+}
+function Get-StudioRuntimeCandidates { 'C:\Python311\python.exe' }
+function Get-StudioPythonCandidates { 'C:\Python311\python.exe'; 'D:\Space Folder\venv\Scripts\python.exe'; 'C:\Python39\python.exe' }
+$env:QWEN_STUDIO_PYTHON = ''
+$listing = Get-StudioPythonList -Selected 'D:\Space Folder\venv\Scripts\python.exe'
+if ($listing.candidates.Count -ne 3 -or $listing.python.version -ne '3.12.8') { throw 'All-interpreter discovery or selection failed.' }
+$missing = Get-StudioPythonList -Selected 'D:\removed\python.exe'
+if ($missing.found) { throw 'Missing explicitly selected interpreter must not silently fall back.' }
+Write-Output 'PASS: interpreter enumeration, selection and missing selection'

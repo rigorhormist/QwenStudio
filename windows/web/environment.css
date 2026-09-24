@@ -6,3 +6,9 @@
 .environment footer p:last-child{margin:9px 0 0;font-size:11px}
 #cancel{color:#a54336;background:#fff0ed}
 @media(max-width:740px){.environment{padding-bottom:210px}}
+
+.environment-options{display:grid;grid-template-columns:minmax(0,1.5fr) minmax(0,1fr);gap:32px;margin:28px 0 30px}.environment-options label{display:block;margin-bottom:10px;color:#515151}.choice-line{display:flex;gap:8px;align-items:center}.choice-line select{flex:1;min-width:0}.choice-line button{flex:none}.environment-options select{max-width:100%;width:100%;text-overflow:ellipsis}.environment-options p{font-size:12px;margin:9px 0 0;overflow-wrap:anywhere}#python-path{font-size:12px;line-height:1.65;color:#515151;user-select:text}#python-locked{color:#885139}.installation{margin:0 0 26px;padding:18px 22px;background:#f5f5f5;border-radius:16px}.progress-heading{display:flex;justify-content:space-between;gap:20px;line-height:1.5}#install-time{font-size:12px;color:#686868;font-variant-numeric:tabular-nums}progress{display:block;width:100%;height:5px;margin:14px 0;accent-color:#646464;border:0;border-radius:4px;overflow:hidden}progress::-webkit-progress-bar{background:#dedede;border-radius:4px}progress::-webkit-progress-value{background:#646464;border-radius:4px}progress:not([value]){opacity:.6}.installation p{font-size:12px;margin:4px 0;overflow-wrap:anywhere}#install-bytes{font-variant-numeric:tabular-nums}::selection{background:#dedede;color:#343434}select:disabled{opacity:.55;cursor:default}@media(max-width:760px){.environment-options{grid-template-columns:1fr;gap:22px}.choice-line{flex-wrap:wrap}.choice-line select{min-width:200px}.installation{padding:16px}}@media(prefers-reduced-motion:reduce){progress::-webkit-progress-value{transition:none}}
+
+#cuda-choice{margin-top:18px}
+
+.installation{scroll-margin-bottom:180px}

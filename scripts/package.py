@@ -2,6 +2,7 @@
 import argparse
 import hashlib
 import re
+import shutil
 import zipfile
 from pathlib import Path
 
@@ -10,8 +11,7 @@ COMMON = ('README.md', 'README.en.md', 'LICENSE', 'LICENSE.model.txt', 'NOTICE',
           'THIRD_PARTY_NOTICES.md', 'SECURITY.md', 'CHANGELOG.md', 'CONTRIBUTING.md',
           'docs', 'licenses', 'assets')
 ALLOWED = {
-    'windows': ('app', 'backend', 'web', 'desktop', 'assets', 'requirements.txt',
-                'setup.cmd', 'setup.ps1', 'find-python.ps1', 'start.cmd', 'start.ps1', 'build.ps1', 'settings.example.json'),
+    'windows': ('app/Qwen Studio.exe',),
     'macos': ('Qwen Studio.app', 'backend', 'web', 'native', 'assets', 'requirements.txt',
               'setup.command', 'find-python.command', 'build.sh'),
 }
@@ -37,13 +37,15 @@ def package(platform, version, output):
     stem = f'QwenStudio-{version}-{suffix}'
     output.mkdir(parents=True, exist_ok=True)
     archive = output / f'{stem}.zip'
+    if platform=='windows':
+        shutil.copy2(expected,output/(stem+'.exe'))
     seen = set()
     with zipfile.ZipFile(archive, 'w', zipfile.ZIP_DEFLATED, compresslevel=6) as z:
         for base, names in ((root, ALLOWED[platform]), (ROOT, COMMON)):
             for name in names:
                 for item in files(base / name):
                     rel = item.relative_to(base)
-                    target = f'{stem}/{rel.as_posix()}'
+                    target = f'{stem}/'+('Qwen Studio.exe' if platform=='windows' and base==root else rel.as_posix())
                     if target in seen:
                         continue
                     seen.add(target)

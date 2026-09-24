@@ -11,11 +11,13 @@ import os
 from pathlib import Path
 import subprocess
 import sys
+import threading
 import uuid
 
 from io_utils import atomic_json
 from runtime_location import runtime_python
 from runtime_dependencies import ROOT_REQUIREMENTS
+from runtime_progress import SOURCES, PipProgress, emit
 
 FLAGS=getattr(subprocess,'CREATE_NO_WINDOW',0)
 
@@ -38,18 +40,35 @@ def installation_lock(root):
 
 
 class RuntimeInstaller:
-    def __init__(self,root,data,cuda='cu130',current=None):
+    def __init__(self,root,data,cuda='cu130',current=None,source='official'):
         self.root=Path(root).resolve();self.data=Path(data).resolve()
+        if source not in SOURCES:raise ValueError('Unknown dependency source: '+source)
+        self.source=source;self.raw_progress=None
         self.cuda=cuda;self.current=Path(current) if current else runtime_python(self.root,self.data)
 
     def run_command(self,arguments,timeout=1800,capture=False):
-        result=subprocess.run([str(x) for x in arguments],cwd=self.root,timeout=timeout,
-            creationflags=FLAGS,encoding='utf-8',errors='replace',
-            stdout=subprocess.PIPE if capture else None,stderr=subprocess.PIPE if capture else None,
-            env={**os.environ,'PYTHONUTF8':'1','PYTHONUNBUFFERED':'1','PIP_NO_INPUT':'1','PIP_DISABLE_PIP_VERSION_CHECK':'1','PYTHONDONTWRITEBYTECODE':'1'})
-        if result.returncode:
-            raise RuntimeError(f'Command failed (exit {result.returncode}). '+((result.stderr or result.stdout or '')[-2000:] if capture else 'See the installation log.'))
-        return result.stdout or ''
+        env={k:v for k,v in os.environ.items() if not k.startswith('PIP_') and k not in ('PYTHONPATH','PYTHONHOME')}
+        env.update(PYTHONUTF8='1',PYTHONUNBUFFERED='1',PIP_NO_INPUT='1',PIP_DISABLE_PIP_VERSION_CHECK='1',PYTHONDONTWRITEBYTECODE='1',PIP_CONFIG_FILE=os.devnull,PIP_INDEX_URL=SOURCES[self.source])
+        command=[str(x) for x in arguments]
+        if capture:
+            result=subprocess.run(command,cwd=self.root,timeout=timeout,creationflags=FLAGS,encoding='utf-8',errors='replace',stdout=subprocess.PIPE,stderr=subprocess.PIPE,env=env)
+            if result.returncode:raise RuntimeError(f'Command failed (exit {result.returncode}). '+(result.stderr or result.stdout or '')[-2000:])
+            return result.stdout or ''
+        tracker=PipProgress()
+        with subprocess.Popen(command,cwd=self.root,creationflags=FLAGS,encoding='utf-8',errors='replace',stdout=subprocess.PIPE,stderr=subprocess.STDOUT,env=env,bufsize=1) as process:
+            expired=threading.Event()
+            def stop():
+                expired.set()
+                if process.poll() is None:process.kill()
+            deadline=threading.Timer(timeout,stop);deadline.daemon=True;deadline.start()
+            try:
+                for line in process.stdout:
+                    if not tracker.feed(line):print(line.rstrip(),flush=True)
+                process.wait()
+                if expired.is_set():raise subprocess.TimeoutExpired(command,timeout)
+                if process.returncode:raise RuntimeError(f'Command failed (exit {process.returncode}). See the installation log.')
+            finally:deadline.cancel()
+        return ''
 
     def probe(self,python):
         if not Path(python).is_file():return {'ready':False,'items':{}}
@@ -61,7 +80,17 @@ class RuntimeInstaller:
             return {'ready':False,'items':{}}
 
     def pip(self,python,*arguments):
-        self.run_command([python,'-m','pip','--disable-pip-version-check','--no-input',*arguments,'--retries','2','--timeout','30'])
+        if self.raw_progress is None:
+            help_text=self.run_command([python,'-m','pip','help','install'],capture=True,timeout=30)
+            self.raw_progress='raw' in help_text
+            if not self.raw_progress:
+                emit('installer')
+                # Upgrade only the new candidate's installer; the selected runtime is untouched.
+                self.run_command([python,'-m','pip','install','--upgrade','pip>=25.1','--index-url',SOURCES[self.source],'--progress-bar','off','--retries','2','--timeout','30'])
+                help_text=self.run_command([python,'-m','pip','help','install'],capture=True,timeout=30)
+                self.raw_progress='raw' in help_text
+        index=[] if '--index-url' in arguments else ['--index-url',SOURCES[self.source]]
+        self.run_command([python,'-m','pip','--disable-pip-version-check','--no-input',*arguments,*index,'--progress-bar','raw' if self.raw_progress else 'off','--retries','2','--timeout','30'])
 
     def inherit_packages(self,python):
         # Discover paths using the selected interpreter, not the base interpreter:
@@ -73,10 +102,12 @@ class RuntimeInstaller:
         self.run_command([python,'-I','-X','utf8','-c',code],timeout=30)
 
     def repair(self):
+        emit('checking')
         print('Checking the existing runtime before making any changes...',flush=True)
         previous=self.probe(self.current)
         if previous.get('ready'):
             print('All required checks passed. Existing CUDA and dependencies kept; nothing to install.',flush=True)
+            emit('complete')
             return self.current
         failures=[v for v in previous.get('items',{}).values() if v.get('required',True) and v.get('state')!='pass']
         wrong_build=any(v['id']=='gpu' and 'PyTorch 不含' in v.get('diagnostic','') for v in failures)
@@ -86,6 +117,7 @@ class RuntimeInstaller:
             raise RuntimeError('QWEN_STUDIO_PYTHON selects a custom runtime. It has not been changed. Remove that override to let Qwen Studio create a separate repaired runtime.')
         with installation_lock(self.data/'runtime'):
             candidate=self.data/'runtime'/('env-'+datetime.now().strftime('%Y%m%d-%H%M%S')+'-'+uuid.uuid4().hex[:8])
+            emit('prepare')
             print('Preparing a separate runtime: '+str(candidate),flush=True)
             print('Your current environment, models, sessions and images will be kept.',flush=True)
             base=Path(getattr(sys,'_base_executable',sys.executable))
@@ -94,6 +126,7 @@ class RuntimeInstaller:
             # Append the selected runtime's package directories AFTER the candidate's.
             # pip installs repairs into this new prefix and cannot uninstall the source.
             self.inherit_packages(python)
+            emit('gpu')
             torch_ready=True
             try:
                 gpu=json.loads(self.run_command([python,'-X','utf8',self.root/'backend/environment_probe.py','--check','cuda-stack'],timeout=60,capture=True).strip().splitlines()[-1])
@@ -105,6 +138,7 @@ class RuntimeInstaller:
                 packages=['torch==2.12.0','torchvision==0.27.0'] if sys.platform=='darwin' else ['torch==2.9.0','torchvision==0.24.0']
                 index=[] if sys.platform=='darwin' else ['--index-url','https://download.pytorch.org/whl/'+self.cuda]
                 self.pip(python,'install','--ignore-installed','--no-deps',*packages,*index)
+            emit('packages')
             broken={item['id'].removeprefix('package:') for item in failures if item['id'].startswith('package:')}
             if previous.get('items',{}).get('pipeline',{}).get('state')!='pass':broken.add('diffusers')
             versions={'PIL':'Pillow'}
@@ -122,6 +156,7 @@ class RuntimeInstaller:
                 requirements=[value for value in requirements if not value.startswith(('torch>=','torchvision>='))]+packages
             # The resolver repairs only unsatisfied transitive constraints. No global pip check.
             self.pip(python,'install',*requirements)
+            emit('validate')
             print('Validating the repaired runtime before activation...',flush=True)
             final=self.probe(python)
             if not final.get('ready'):
@@ -129,17 +164,19 @@ class RuntimeInstaller:
                 raise RuntimeError('The new runtime did not pass validation. The original runtime is still selected.\n'+diagnostics)
             atomic_json(self.data/'runtime-path.json',{'python':python.relative_to(self.data).as_posix()})
             print('Repair complete. The validated runtime is now selected; the previous environment was preserved.',flush=True)
+            emit('complete')
             return python
 
 
 if __name__=='__main__':
     parser=argparse.ArgumentParser()
     parser.add_argument('--root',type=Path,default=Path(__file__).resolve().parents[1])
+    parser.add_argument('--source',choices=SOURCES,default='official')
     parser.add_argument('--cuda',choices=('cu130','cu128'),default='cu130')
     parser.add_argument('--data',type=Path,required=True)
     parser.add_argument('--python',type=Path,default=Path(sys.executable))
     options=parser.parse_args()
-    try:RuntimeInstaller(options.root,options.data,options.cuda,options.python).repair()
+    try:RuntimeInstaller(options.root,options.data,options.cuda,options.python,options.source).repair()
     except Exception as error:
         print('Dependency repair stopped: '+str(error),file=sys.stderr,flush=True)
         sys.exit(1)

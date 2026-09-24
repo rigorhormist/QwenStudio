@@ -4,34 +4,21 @@
 
 ## 选择下载包
 
-从 [GitHub Releases](https://github.com/rigorhormist/QwenStudio/releases/latest) 下载 Windows x64 或 Mac arm64 的 ZIP，并完整解压到可写目录。不要只复制 Windows 的 EXE。源码压缩包用于自行构建；想直接打开桌面程序，请选名称包含平台的发布包。
+从 [GitHub Releases](https://github.com/rigorhormist/QwenStudio/releases/latest) 下载 Windows x64 的 EXE 或 Mac arm64 的 ZIP。Windows 可直接运行单个 EXE；ZIP 版本另外附带使用文档。源码包用于自行构建。
 
 安装分为三部分：下载桌面程序，安装 Python 依赖，在应用内下载模型。图像模型约 33.1 GB；两个增强模型均为可选下载，全部下载会额外占用约 37.7 GB。下载分段合并还需要临时空间；完整安装建议预留至少 120 GB，长期保存图片需另行增加。
 
 ## Windows
 
-1. 完整解压 Windows ZIP，双击 `start.cmd` 或 `app/Qwen Studio.exe`。无需先运行依赖安装脚本。
-2. 应用会显示环境检测页。缺少 WebView2 时，先使用原生检测页的下载入口安装，再点“重新检测”。
-3. 若未安装 Python，使用“下载 Python”安装 64 位 Python 3.10–3.13（建议 3.11，启用 Python Launcher）。点“安装或修复依赖”，应用会保留可用依赖，在数据目录的独立环境中准备缺失或损坏的依赖，并显示安装日志。
-4. 必需项目全部通过后，点“进入 Qwen Studio”。如 GPU 检查失败，先安装或更新 NVIDIA 驱动，再重新检测。
-5. 首次生成图片前，在“模型设置”中点击“下载模型”，选择下载源。
+1. 双击 `QwenStudio-2.2.3-windows-x64.exe`。无需运行 setup 或 start 脚本，也无需安装 .NET SDK。
+2. 应用会在本地数据目录下展开内置界面和后端，随后显示环境检测页。缺少 WebView2 时，使用原生检测页的下载入口安装，再点“重新检测”。
+3. 在“Python 解释器”中选择版本。列表同时显示路径与虚拟环境标记；“选择其他…”可指定未被扫描到的 `python.exe`。不兼容的版本会显示在列表中，但不能用于安装。若未安装 Python，先通过“下载 Python”安装 64 位 3.10–3.13（建议 3.11）。
+4. 选择“依赖下载源”和新装 CUDA 版本，再点“安装或修复依赖”。已有可用的 CUDA 会复用；修复在独立环境中进行。安装页显示当前步骤、文件下载量、可获取的速度和日志。
+5. 必需项目通过后进入软件，在模型设置中选择模型下载源。
 
-应用优先查找保存在数据目录中的上次可用环境，再查找旧版应用环境、Python Launcher、系统安装登记、已安装的 Store Python 和 PATH。新版 ZIP 解压到其他目录后，也能复用已保存的环境。已安装 Python、但缺少依赖时，无需重装 Python。检测页会显示实际使用的解释器路径；请保留仍被引用的旧环境目录。
+应用扫描已保存的运行环境、旧版目录、Python Launcher、注册表、Store Python、PATH，以及常见 Conda 和 pyenv 目录。选择新解释器会重新检测其中的依赖；只有通过检测的环境才会被记住并用于启动服务。多个版本不会再被自动合并成一个选项。
 
-安装脚本只在该次 PowerShell 进程使用 `ExecutionPolicy Bypass`，不改系统执行策略。Windows 发布包自带 .NET 10 运行时，普通使用无需安装 SDK。
-
-如果驱动环境需要 CUDA 12.8，使用：
-
-```powershell
-.\setup.ps1 -Cuda cu128
-```
-
-指定已安装的 Python：
-
-```powershell
-.\setup.ps1 -Python 'C:\Python311\python.exe'
-```
-
+EXE 自带 .NET 运行时、界面、后端及依赖安装逻辑，不包含 Python、WebView2、GPU 驱动、Ollama 或模型权重。内置资源位于 `%LOCALAPPDATA%\QwenStudio\application`，模型和会话仍保存在原数据目录。
 PyTorch 的 CUDA 构建和驱动要求见 [官方安装说明](https://pytorch.org/get-started/previous-versions/)。应用仅为图像推理启用 CUDA，没有 Windows CPU、AMD 或 Intel GPU 图像后端。
 
 ## Mac
@@ -43,7 +30,7 @@ PyTorch 的 CUDA 构建和驱动要求见 [官方安装说明](https://pytorch.o
 
 发布包使用本地临时签名，没有 Apple 公证。如果系统提示无法验证开发者，请先核对下载来源与 SHA-256，再按 macOS“隐私与安全性”页面提供的打开方式处理，不需要关闭系统安全检查。
 
-安装脚本优先复用保存的环境、应用管理的环境或旧版应用环境，再寻找兼容的 python.org 和 Homebrew Python。也可指定解释器：
+环境页支持选择 Python 版本和路径，也可手动定位解释器。程序会搜索已保存环境、python.org、Homebrew、PATH 以及常见 Conda 和 pyenv 安装。开发者从源码启动时仍可使用：
 
 ```sh
 QWEN_STUDIO_PYTHON_BOOTSTRAP=/path/to/python3 ./setup.command
@@ -59,7 +46,9 @@ QWEN_STUDIO_PYTHON_BOOTSTRAP=/path/to/python3 ./setup.command
 
 Ollama 和提示词增强接口均为可选项，缺少时不会阻挡直接生图或改图。模型权重在进入应用后单独下载。安装工具的原始诊断日志保留原文，应用说明与操作控件均支持中英文。
 
-高级用户仍可运行包内 `setup.cmd` / `setup.command`。Windows 默认采用 CUDA 13.0；需要 CUDA 12.8 时使用下方指定方式，修复会复用可用的 CUDA 环境，并区分 CPU 版 PyTorch 与显卡驱动缺失。
+两个平台均可选择官方 PyPI 或[清华大学镜像](https://mirrors.tuna.tsinghua.edu.cn/help/pypi/)，软件会记住选择。该设置用于 Python 包；PyTorch CUDA 包仍使用 PyTorch 官方索引，固定版本的 Diffusers 源码仍从 GitHub 下载。Windows 可在页面选择 CUDA 13.0 或 12.8，这只影响需要新装的 CUDA 环境。
+
+下载条显示当前文件的真实字节进度，不代表全部依赖的总进度；解析、校验和安装期间显示当前步骤。旧版 pip 会先在新环境内更新，更新期间可查看实时日志。安装中可停止，换源后重新开始时保留 pip 已有缓存。
 
 环境检测只检查 Qwen Studio 及其依赖，不会因为同一 Python 中其他软件的包冲突而阻挡使用。独立导入检查并行执行，单项最多等待 60 秒，桌面依赖检查最多等待三分钟。可以随时停止检测或修复；滚动时结果和操作按钮保持可见，环境正常时不再提供重复安装。修复只有通过检查后才切换到新环境，失败或取消会保留原有选择。
 
@@ -84,7 +73,7 @@ Ollama 不参与本应用的图像推理。思考强度控件根据 Ollama 返�
 | Mac | `~/Library/Application Support/Qwen Studio` | 数据目录下 `models/Qwen-Image-2.1` |
 | Windows | `%LOCALAPPDATA%\QwenStudio` | 数据目录下 `models\Qwen-Image-2.1` |
 
-Windows 可复制 `settings.example.json` 为 `settings.local.json`，填写自己的目录。JSON 中的反斜杠必须写成 `\\`。原有用户的本地配置不会被下载包覆盖。Windows 通过环境检测后还会把存储位置记入 `%LOCALAPPDATA%\QwenStudio\locations.json`，让后续下载包沿用原来的模型和会话目录；当前目录的 `settings.local.json` 优先。
+Windows 可在 EXE 旁创建 `settings.local.json`，使用 `{"data":"D:\\QwenStudioData","model":"D:\\Qwen-Image-2.1"}` 指定目录。JSON 中的反斜杠必须写成 `\\`。原有用户的本地配置不会被下载包覆盖。Windows 通过环境检测后还会把存储位置记入 `%LOCALAPPDATA%\QwenStudio\locations.json`，让后续下载包沿用原来的模型和会话目录；当前目录的 `settings.local.json` 优先。
 
 两端均支持 `QWEN_STUDIO_DATA` 环境变量。Windows 另支持 `QWEN_STUDIO_MODEL`；Mac 自定义解释器使用 `QWEN_STUDIO_PYTHON`。Mac 的模型目录跟随数据目录。通过 Finder 启动 App 时不会继承终端里临时设置的环境变量。
 
@@ -92,7 +81,7 @@ Windows 可复制 `settings.example.json` 为 `settings.local.json`，填写自�
 
 ## 更新与卸载
 
-更新前关闭应用，保留数据目录。Windows 可覆盖程序和源码文件，同时保留 `.venv`、旧版 `runtime` 目录、`runtime-path.json` 和 `settings.local.json`。通过检测的运行环境路径会保存在数据目录中，后续解压到其他目录也能复用。Mac 替换 App 后会自动检测环境；也可在设置中重新检测。不要在任务执行中覆盖程序。
+更新前关闭应用，保留数据目录。Windows 替换 EXE 即可，同时保留 `.venv`、旧版 `runtime` 目录、`runtime-path.json` 和 `settings.local.json`。通过检测的运行环境路径会保存在数据目录中，后续解压到其他目录也能复用。Mac 替换 App 后会自动检测环境；也可在设置中重新检测。不要在任务执行中覆盖程序。
 
 卸载程序不会自动删除会话和模型。需要清理时，先备份所需图片，再自行删除数据目录；Mac 的 Python 运行环境也位于这个目录。删除会话只删除对应聊天记录，生成的图片文件仍保留。
 
@@ -102,12 +91,12 @@ Windows 可复制 `settings.example.json` 为 `settings.local.json`，填写自�
 
 ```sh
 # Mac
-shasum -a 256 QwenStudio-2.2.2-macos-arm64.zip
+shasum -a 256 QwenStudio-2.2.3-macos-arm64.zip
 ```
 
 ```powershell
 # Windows
-Get-FileHash .\QwenStudio-2.2.2-windows-x64.zip -Algorithm SHA256
+Get-FileHash .\QwenStudio-2.2.3-windows-x64.zip -Algorithm SHA256
 ```
 
 将结果与发布页的校验文件逐字比较。常见错误处理见 [使用说明](usage.zh-CN.md)。

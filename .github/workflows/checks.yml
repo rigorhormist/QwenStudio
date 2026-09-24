@@ -39,6 +39,14 @@ jobs:
         shell: powershell
       - run: ./windows/build.ps1
         shell: pwsh
+      - name: Check standalone EXE resources
+        shell: pwsh
+        run: |
+          $isolated = Join-Path $env:RUNNER_TEMP 'Standalone Qwen'
+          New-Item $isolated -ItemType Directory -Force | Out-Null
+          Copy-Item 'windows/app/Qwen Studio.exe' (Join-Path $isolated 'Qwen Studio.exe')
+          $process = Start-Process (Join-Path $isolated 'Qwen Studio.exe') -ArgumentList '--check-resources' -Wait -PassThru
+          if ($process.ExitCode -ne 0) { throw 'Standalone EXE could not unpack its embedded resources.' }
   macos:
     runs-on: macos-14
     steps:

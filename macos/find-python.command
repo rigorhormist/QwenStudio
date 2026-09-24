@@ -2,7 +2,10 @@
 set -eu
 studio_root="$(cd "$(dirname "$0")" && pwd)"
 studio_data="${QWEN_STUDIO_DATA:-$HOME/Library/Application Support/Qwen Studio}"
+studio_mode="${1:-first}"
+studio_requested="${2:-}"
 typeset -a studio_candidates
+[[ -z "$studio_requested" ]] || studio_candidates+=("$studio_requested")
 if [[ -n "${QWEN_STUDIO_PYTHON:-}" ]]; then
   studio_candidates=("$QWEN_STUDIO_PYTHON")
 elif [[ -n "${QWEN_STUDIO_PYTHON_BOOTSTRAP:-}" ]]; then
@@ -20,12 +23,20 @@ else
     studio_candidates+=("/Library/Frameworks/Python.framework/Versions/$studio_version/bin/python3" "/opt/homebrew/opt/python@$studio_version/bin/python$studio_version" "/usr/local/opt/python@$studio_version/bin/python$studio_version")
   done
   studio_candidates+=(/opt/homebrew/bin/python3 /usr/local/bin/python3)
+  studio_candidates+=("$HOME"/.pyenv/versions/*/bin/python3(N) "$HOME"/miniconda3/bin/python3 "$HOME"/miniconda3/envs/*/bin/python3(N) "$HOME"/anaconda3/bin/python3 "$HOME"/anaconda3/envs/*/bin/python3(N) /opt/anaconda3/bin/python3 /opt/anaconda3/envs/*/bin/python3(N))
+  for studio_dir in "${path[@]}"; do studio_candidates+=("$studio_dir/python3"); done
 fi
+typeset -U studio_candidates
 for studio_candidate in "${studio_candidates[@]}"; do
   [[ -x "$studio_candidate" ]] || continue
+  if [[ "$studio_mode" == all ]]; then
+    "$studio_candidate" -I -B -X utf8 -c 'import sys,platform,json;print(json.dumps(dict(executable=sys.executable,version=".".join(map(str,sys.version_info[:3])),bits=64 if sys.maxsize>2**32 else 32,virtual=sys.prefix!=sys.base_prefix,compatible=(3,10)<=sys.version_info[:2]<(3,14) and platform.machine()=="arm64")))' 2>/dev/null || true
+    continue
+  fi
   if studio_result=$("$studio_candidate" -I -B -X utf8 -c 'import sys,platform; assert (3,10)<=sys.version_info[:2]<(3,14) and platform.machine()=="arm64"; print(sys.executable)' 2>/dev/null); then
     print -r -- "$studio_result"; exit 0
   fi
 done
+[[ "$studio_mode" != all ]] || exit 0
 print -u2 'Install arm64 Python 3.10–3.13, or correct QWEN_STUDIO_PYTHON, then retry.'
 exit 1

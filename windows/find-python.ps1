@@ -1,6 +1,6 @@
-param([switch]$AsJson)
+param([switch]$AsJson, [switch]$All, [string]$Selected = "")
 
-# Shared by the desktop bootstrap and setup.ps1. Merely finding python.exe is
+# Internal discovery helper bundled in the desktop EXE. Merely finding python.exe is
 # insufficient: Windows Store aliases, removed installations and 32-bit Python
 # must not pass the environment check.
 function Invoke-PythonDiscoveryCommand([string]$Executable, [string]$Arguments) {
@@ -75,6 +75,13 @@ function Get-StudioPythonCandidates {
             }
         }
     }
+    foreach ($parent in @("$env:USERPROFILE\miniconda3", "$env:USERPROFILE\anaconda3", "$env:LOCALAPPDATA\miniconda3", "$env:USERPROFILE\.pyenv\pyenv-win\versions")) {
+        if (-not (Test-Path -LiteralPath $parent)) { continue }
+        Join-Path $parent 'python.exe'
+        Get-ChildItem -LiteralPath $parent -Directory -ErrorAction SilentlyContinue | ForEach-Object { Join-Path $_.FullName 'python.exe' }
+        $envs = Join-Path $parent 'envs'
+        if (Test-Path -LiteralPath $envs) { Get-ChildItem -LiteralPath $envs -Directory | ForEach-Object { Join-Path $_.FullName 'python.exe' } }
+    }
     # Real Store Python packages are separate from the zero-byte App Installer aliases.
     if (Get-Command Get-AppxPackage -ErrorAction SilentlyContinue) {
         try {
@@ -135,9 +142,36 @@ function Get-StudioRuntimeCandidates {
         } catch { Write-Verbose $_.Exception.Message }
     }
     Join-Path $PSScriptRoot '.venv\Scripts\python.exe'
+    # Older folder-based releases keep their runtime next to the EXE's parent.
+    foreach ($directory in @($env:QWEN_STUDIO_LAUNCH_DIR, $(if ($env:QWEN_STUDIO_LAUNCH_DIR) { Split-Path $env:QWEN_STUDIO_LAUNCH_DIR -Parent }))) {
+        if (-not $directory) { continue }
+        Join-Path $directory '.venv\Scripts\python.exe'
+        try {
+            $value = (Get-Content -LiteralPath (Join-Path $directory 'runtime-path.json') -Raw -Encoding UTF8 -ErrorAction Stop | ConvertFrom-Json).python
+            if ($value -is [string] -and $value.Trim()) { if ([IO.Path]::IsPathRooted($value)) { $value } else { Join-Path $directory $value } }
+        } catch { Write-Verbose $_.Exception.Message }
+    }
+}
+
+function Get-StudioPythonList([string]$Selected = '') {
+    $seen = New-Object 'System.Collections.Generic.HashSet[string]' ([StringComparer]::OrdinalIgnoreCase)
+    $executables = New-Object 'System.Collections.Generic.HashSet[string]' ([StringComparer]::OrdinalIgnoreCase)
+    $items = @()
+    $explicit = if ($env:QWEN_STUDIO_PYTHON) { $env:QWEN_STUDIO_PYTHON } else { $Selected }
+    $paths = @($explicit) + @(Get-StudioRuntimeCandidates) + @(Get-StudioPythonCandidates)
+    foreach ($candidate in $paths) {
+        if (-not $candidate -or -not $seen.Add($candidate)) { continue }
+        $result = Test-StudioPython $candidate
+        if ($result -and $executables.Add($result.executable)) { $items += $result }
+        if ($result -and $explicit -and $candidate -eq $explicit) { $explicit = $result.executable }
+    }
+    $chosen = if ($explicit) { @($items | Where-Object { $_.executable -eq $explicit -and $_.compatible }) } else { @($items | Where-Object { $_.compatible }) }
+    $python = if ($chosen.Count) { $chosen[0] } else { $null }
+    [pscustomobject]@{found=($null -ne $python);python=$python;candidates=@($items);rejected=@($items | Where-Object { -not $_.compatible });selected=$explicit}
 }
 
 if ($AsJson) {
     [Console]::OutputEncoding = New-Object System.Text.UTF8Encoding($false)
-    Find-StudioPython -Preferred @(Get-StudioRuntimeCandidates) -Explicit $env:QWEN_STUDIO_PYTHON | ConvertTo-Json -Depth 5 -Compress
+    if ($All) { Get-StudioPythonList -Selected $Selected | ConvertTo-Json -Depth 5 -Compress }
+    else { Find-StudioPython -Preferred @(Get-StudioRuntimeCandidates) -Explicit $env:QWEN_STUDIO_PYTHON | ConvertTo-Json -Depth 5 -Compress }
 }

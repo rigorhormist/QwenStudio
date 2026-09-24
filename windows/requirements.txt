@@ -1,4 +1,4 @@
-# Install PyTorch first with setup.ps1 (CUDA 13.0 by default).
+# PyTorch is installed by the in-app environment page (CUDA 13.0 by default).
 transformers==5.17.0
 diffusers @ https://github.com/huggingface/diffusers/archive/80c7ed262aeffbeb43ef13ae04baeb9b84515a69.zip
 accelerate==1.12.0

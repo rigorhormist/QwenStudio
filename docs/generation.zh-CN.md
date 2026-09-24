@@ -2,7 +2,7 @@
 
 [English](generation.en.md) | [返回首页](../README.md)
 
-Qwen Studio 2.2.2 使用 Qwen-Image-2.1 的 Diffusers 路径，按官方公开的接口、推荐配置和 Prompt Enhancer 参数接入本地生成。下表区分模型能力、应用控制和设备限制。它不是所有推理框架的合集，也不把参数接通等同于每台电脑都已实测。
+Qwen Studio 2.2.3 使用 Qwen-Image-2.1 的 Diffusers 路径，按官方公开的接口、推荐配置和 Prompt Enhancer 参数接入本地生成。下表区分模型能力、应用控制和设备限制。它不是所有推理框架的合集，也不把参数接通等同于每台电脑都已实测。
 
 ## 已接入的能力
 

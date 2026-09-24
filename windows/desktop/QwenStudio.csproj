@@ -7,11 +7,21 @@
     <Nullable>enable</Nullable>
     <AssemblyName>Qwen Studio</AssemblyName>
     <ApplicationHighDpiMode>PerMonitorV2</ApplicationHighDpiMode>
-    <Version>2.2.2</Version>
+    <Version>2.2.3</Version>
+    <PublishSingleFile>true</PublishSingleFile>
+    <SelfContained>true</SelfContained>
+    <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
+    <EnableCompressionInSingleFile>true</EnableCompressionInSingleFile>
+    <PythonCommand Condition="'$(OS)' == 'Windows_NT'">python</PythonCommand>
+    <PythonCommand Condition="'$(OS)' != 'Windows_NT'">python3</PythonCommand>
     <EnableWindowsTargeting>true</EnableWindowsTargeting>
     <ApplicationIcon>assets/qwen-studio.ico</ApplicationIcon>
     <RestorePackagesWithLockFile>true</RestorePackagesWithLockFile>
   </PropertyGroup>
+  <Target Name="BundleStudioResources" BeforeTargets="PrepareForBuild">
+    <Exec Command="$(PythonCommand) &quot;$(MSBuildProjectDirectory)/../../scripts/bundle_windows.py&quot; &quot;$(MSBuildProjectDirectory)/obj/studio-resources.zip&quot;" />
+  </Target>
+  <ItemGroup><EmbeddedResource Include="obj/studio-resources.zip" LogicalName="Studio.Resources" /></ItemGroup>
   <ItemGroup><PackageReference Include="Microsoft.Web.WebView2" Version="1.0.4191.47" /></ItemGroup>
   <ItemGroup><Compile Remove="**/._*" /></ItemGroup>
   <Target Name="ExcludeUnusedWpf" BeforeTargets="ResolveAssemblyReferences">

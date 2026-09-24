@@ -18,8 +18,8 @@ Qwen Studio 是为解决 Ollama 等平台暂不支持 Qwen Image 2.1 情况的�
 
 | 平台 | 下载包 | 首次使用 |
 | --- | --- | --- |
-| Windows x64 | [QwenStudio-2.2.2-windows-x64.zip](https://github.com/rigorhormist/QwenStudio/releases/download/v2.2.2/QwenStudio-2.2.2-windows-x64.zip) | 解压，打开 `start.cmd`，按应用内环境检测页完成设置 |
-| Mac Apple Silicon | [QwenStudio-2.2.2-macos-arm64.zip](https://github.com/rigorhormist/QwenStudio/releases/download/v2.2.2/QwenStudio-2.2.2-macos-arm64.zip) | 解压，打开 `Qwen Studio.app`，按环境检测页完成设置 |
+| Windows x64 | [QwenStudio-2.2.3-windows-x64.exe](https://github.com/rigorhormist/QwenStudio/releases/download/v2.2.3/QwenStudio-2.2.3-windows-x64.exe) | 直接打开 EXE，在软件中选择 Python、依赖源并完成环境设置 |
+| Mac Apple Silicon | [QwenStudio-2.2.3-macos-arm64.zip](https://github.com/rigorhormist/QwenStudio/releases/download/v2.2.3/QwenStudio-2.2.3-macos-arm64.zip) | 解压，打开 `Qwen Studio.app`，按环境检测页完成设置 |
 
 安装包包含桌面程序，**不包含 Python、模型权重和 Ollama**。Windows 包自带 .NET 运行时；Mac 的 Python 依赖安装在应用数据目录中，完成安装后可以将 App 移入“应用程序”。当前发布包没有开发者证书签名或 Apple 公证。
 
@@ -75,7 +75,7 @@ git clone https://github.com/rigorhormist/QwenStudio.git
 cd QwenStudio
 ```
 
-Mac 需要 Xcode Command Line Tools；在 `macos` 目录运行 `./build.sh` 和 `./setup.command`。Windows 需要 .NET 10 SDK；在 `windows` 目录运行 `build.ps1` 和 `setup.cmd`。构建桌面程序不需要下载模型。
+Mac 需要 Xcode Command Line Tools；在 `macos` 目录运行 `./build.sh` 和 `./setup.command`。Windows 需要 .NET 10 SDK；在 `windows` 目录运行 `build.ps1`，生成 `app/Qwen Studio.exe`，环境设置全部在软件内完成。构建桌面程序不需要下载模型。
 
 ```text
 macos/       AppKit 桌面外壳、MPS 后端和界面

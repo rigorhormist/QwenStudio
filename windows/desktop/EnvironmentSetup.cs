@@ -16,7 +16,13 @@ internal sealed partial class StudioWindow
     string language="auto";
     Panel? fallback;
     const string EnvironmentOrigin="https://studio.local";
-    string? detectedPython;
+    string? detectedPython,requestedPython,backendPython;
+    string dependencySource="official",cudaVersion="cu130";
+    JsonElement pythonCandidates=JsonSerializer.SerializeToElement(Array.Empty<object>());
+    bool PythonLocked => !string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable("QWEN_STUDIO_PYTHON"));
+    Task SendEnvironmentChoices()=>SendEnvironment(new{pythonCandidates,selectedPython=detectedPython??requestedPython??"",pythonLocked=PythonLocked,dependencySource,cudaVersion,canInstall=detectedPython!=null&&!PythonLocked});
+    void SaveDependencySource(string value){if(!new[]{"official","tuna"}.Contains(value))return;dependencySource=value;try{File.WriteAllText(Path.Combine(data,"environment-source.txt"),value);}catch(Exception e){Log(e.Message);}}
+
     string Python => detectedPython ?? Environment.GetEnvironmentVariable("QWEN_STUDIO_PYTHON") ?? Path.Combine(root,".venv","Scripts","python.exe");
     bool English => language=="en" || (language=="auto"&&!CultureInfo.CurrentUICulture.Name.StartsWith("zh",StringComparison.OrdinalIgnoreCase));
     internal string T(string text) => English?translations.GetValueOrDefault(text,text):text;
@@ -24,6 +30,8 @@ internal sealed partial class StudioWindow
 
     void LoadLanguage()
     {
+        try {var cuda=File.ReadAllText(Path.Combine(data,"environment-cuda.txt")).Trim();if(new[]{"cu130","cu128"}.Contains(cuda))cudaVersion=cuda;}catch{}
+        try {var source=File.ReadAllText(Path.Combine(data,"environment-source.txt")).Trim();if(new[]{"official","tuna"}.Contains(source))dependencySource=source;}catch{}
         try {translations=JsonSerializer.Deserialize<Dictionary<string,string>>(File.ReadAllText(Path.Combine(root,"web","locales.json")))??new();}catch{}
         try {var value=File.ReadAllText(Path.Combine(data,"ui-language.txt")).Trim();if(new[]{"auto","zh","en"}.Contains(value))language=value;}catch{}
     }
@@ -88,9 +96,19 @@ internal sealed partial class StudioWindow
             if(action=="environmentReady"){
                 if(environmentBusy){
                     await SendEnvironment(new{reset=true,busy=true,ready=false,language,platform="windows"});
+                    await SendEnvironmentChoices();
                     foreach(var check in checks.Values.ToArray())await SendEnvironment(new{item=check});
                 }else await CheckEnvironment();
             }
+            if(action=="environmentPython"&&!environmentBusy&&!PythonLocked){
+                var selected=payload.GetProperty("python").GetString();
+                if(selected!=null&&pythonCandidates.EnumerateArray().Any(item=>item.GetProperty("executable").GetString()==selected)){requestedPython=selected;manualCheck=true;await CheckEnvironment();}
+            }
+            if(action=="environmentBrowse"&&!environmentBusy&&!PythonLocked){
+                using var dialog=new OpenFileDialog{Title=T("选择 Python 解释器"),Filter="Python (*.exe)|*.exe",CheckFileExists=true};
+                if(dialog.ShowDialog(this)==DialogResult.OK){requestedPython=dialog.FileName;manualCheck=true;await CheckEnvironment();}
+            }
+            if(action=="environmentSource"&&!environmentBusy){SaveDependencySource(payload.GetProperty("source").GetString()??"official");if(payload.TryGetProperty("cuda",out var cuda)&&new[]{"cu130","cu128"}.Contains(cuda.GetString())){cudaVersion=cuda.GetString()!;File.WriteAllText(Path.Combine(data,"environment-cuda.txt"),cudaVersion);}await SendEnvironmentChoices();}
             if(action=="environmentCheck"){manualCheck=true;await CheckEnvironment();}
             if(action=="environmentInstall")await InstallEnvironment();
             if(action=="environmentCancel")environmentOperation?.Cancel();
@@ -107,7 +125,7 @@ internal sealed partial class StudioWindow
     {
         var start=new ProcessStartInfo(command){WorkingDirectory=root,UseShellExecute=false,CreateNoWindow=true,RedirectStandardOutput=true,RedirectStandardError=true,StandardOutputEncoding=Encoding.UTF8,StandardErrorEncoding=Encoding.UTF8};
         foreach(var arg in arguments)start.ArgumentList.Add(arg);
-        start.Environment["QWEN_STUDIO_DATA"]=data;start.Environment["PYTHONUTF8"]="1";start.Environment["PYTHONUNBUFFERED"]="1";start.Environment["PIP_NO_INPUT"]="1";
+        start.Environment["QWEN_STUDIO_LAUNCH_DIR"]=AppContext.BaseDirectory;start.Environment["QWEN_STUDIO_DATA"]=data;start.Environment["PYTHONUTF8"]="1";start.Environment["PYTHONUNBUFFERED"]="1";start.Environment["PIP_NO_INPUT"]="1";
         using var process=new Process{StartInfo=start};environmentProcess=process;
         try{
             process.Start();using var deadline=CancellationTokenSource.CreateLinkedTokenSource(lifetime.Token,environmentOperation?.Token??CancellationToken.None);deadline.CancelAfter(TimeSpan.FromSeconds(timeout));
@@ -125,16 +143,21 @@ internal sealed partial class StudioWindow
         detectedPython=null;
         await Put(new("python","Python 运行环境","checking","正在查找已安装的 Python…"));
         JsonElement result=default;
-        var code=await Run("powershell.exe",["-NoProfile","-ExecutionPolicy","Bypass","-File",Path.Combine(root,"find-python.ps1"),"-AsJson"],90,line=>{
+        var arguments=new List<string>{"-NoProfile","-ExecutionPolicy","Bypass","-File",Path.Combine(root,"find-python.ps1"),"-AsJson","-All"};
+        if(requestedPython!=null){arguments.Add("-Selected");arguments.Add(requestedPython);}
+        var code=await Run("powershell.exe",arguments,180,line=>{
             try{using var document=JsonDocument.Parse(line);if(document.RootElement.TryGetProperty("found",out _))result=document.RootElement.Clone();}
             catch{_ = SendEnvironment(new{log=line});}
         });
+        if(result.ValueKind==JsonValueKind.Object&&result.TryGetProperty("candidates",out var candidates))pythonCandidates=candidates.Clone();
+        else pythonCandidates=JsonSerializer.SerializeToElement(Array.Empty<object>());
         if(code==0&&result.ValueKind==JsonValueKind.Object&&result.GetProperty("found").GetBoolean()){
             detectedPython=result.GetProperty("python").GetProperty("executable").GetString();
-            if(!string.IsNullOrWhiteSpace(detectedPython)&&File.Exists(detectedPython))return true;
+            if(!string.IsNullOrWhiteSpace(detectedPython)&&File.Exists(detectedPython)){await SendEnvironmentChoices();return true;}
         }
+        await SendEnvironmentChoices();
         var incompatible=result.ValueKind==JsonValueKind.Object&&result.TryGetProperty("rejected",out var rejected)&&rejected.GetArrayLength()>0;
-        var detail=incompatible?"已找到 Python，但版本或架构不兼容。需要 64 位 Python 3.10–3.13。":
+        var detail=requestedPython!=null?"所选 Python 不可用或不兼容，请选择其他解释器。":incompatible?"已找到 Python，但版本或架构不兼容。需要 64 位 Python 3.10–3.13。":
             !string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable("QWEN_STUDIO_PYTHON"))?"指定的 Python 环境不可用，请检查 QWEN_STUDIO_PYTHON。":
             code!=0?"Python 查找未能完成，请查看详细日志。":"未找到可用的 Python。安装 64 位 Python 3.10–3.13 后重新检测。";
         await Put(new("python","Python 运行环境","fail",detail,diagnostic:result.ValueKind==JsonValueKind.Object?result.GetRawText():null));
@@ -191,28 +214,30 @@ internal sealed partial class StudioWindow
     {
         if(environmentBusy)return;
         if(environmentReady){await SendEnvironment(new{busy=false,ready=true,message="环境正常，无需重新安装。"});return;}
+        if(detectedPython==null||PythonLocked){await SendEnvironment(new{message="请先选择可用的 Python 解释器。"});return;}
         environmentBusy=true;environmentReady=false;manualCheck=true;
         environmentOperation?.Dispose();environmentOperation=new();
         await SendEnvironment(new{busy=true,ready=false,canCancel=true,message="正在安装依赖…"});
-        var script="[Console]::OutputEncoding=[System.Text.UTF8Encoding]::new($false); & '"+Path.Combine(root,"setup.ps1").Replace("'","''")+"'";
-        if(!string.IsNullOrWhiteSpace(detectedPython))script+=" -Python '"+detectedPython.Replace("'","''")+"'";
-        var encoded=Convert.ToBase64String(Encoding.Unicode.GetBytes(script));
         Log("Dependency repair started. Existing runtime will be preserved.");
-        var code=await Run("powershell.exe",["-NoProfile","-ExecutionPolicy","Bypass","-EncodedCommand",encoded],7200,line=>{_ = SendEnvironment(new{log=line});});
+        var code=await Run(Python,["-X","utf8",Path.Combine(root,"backend","runtime_setup.py"),"--root",root,"--data",data,"--python",Python,"--source",dependencySource,"--cuda",cudaVersion],7200,line=>{
+            try{using var json=JsonDocument.Parse(line);if(json.RootElement.TryGetProperty("type",out var type)&&type.GetString()=="install_progress"){_ = SendEnvironment(new{progress=json.RootElement.Clone()});return;}}catch{}
+            _ = SendEnvironment(new{log=line});
+        });
         environmentBusy=false;
-        if(code==0)await CheckEnvironment();else await SendEnvironment(new{busy=false,ready=false,message=environmentOperation.IsCancellationRequested?"已停止。原有环境保持不变。":"安装未完成，请查看详细日志后重试。"});
+        if(code==0){requestedPython=null;await CheckEnvironment();}else await SendEnvironment(new{busy=false,ready=false,message=environmentOperation.IsCancellationRequested?"已停止。原有环境保持不变。":"安装未完成，请查看详细日志后重试。"});
     }
     async Task OpenStudio()
     {
         if(!environmentReady||environmentBusy)return;
-        if(backend is {HasExited:false}&&origin!=""){EnterStudio();return;}
+        if(backend is {HasExited:false}&&origin!=""&&string.Equals(backendPython,Python,StringComparison.OrdinalIgnoreCase)){EnterStudio();return;}
+        if(backend is {HasExited:false}){var previous=backend;backend=null;origin="";previous.Kill(true);await previous.WaitForExitAsync().WaitAsync(TimeSpan.FromSeconds(8));previous.Dispose();}
         environmentBusy=true;await SendEnvironment(new{busy=true,canCancel=false,message="正在启动本地服务…"});
         try{
             var start=new ProcessStartInfo(Python){WorkingDirectory=root,UseShellExecute=false,CreateNoWindow=true,RedirectStandardOutput=true,RedirectStandardError=true,StandardOutputEncoding=Encoding.UTF8,StandardErrorEncoding=Encoding.UTF8};
             foreach(var argument in new[]{"-X","utf8",Path.Combine(root,"backend","server.py")})start.ArgumentList.Add(argument);
             var model=Environment.GetEnvironmentVariable("QWEN_STUDIO_MODEL")??LocalSetting("model");if(!string.IsNullOrWhiteSpace(model))start.Environment["QWEN_STUDIO_MODEL"]=model;
-            start.Environment["PYTHONUTF8"]="1";start.Environment["PYTHONUNBUFFERED"]="1";start.Environment["QWEN_STUDIO_DATA"]=data;start.Environment["QWEN_STUDIO_TOKEN"]=token;start.Environment["NO_PROXY"]="127.0.0.1,localhost";
-            var process=new Process{StartInfo=start,EnableRaisingEvents=true};backend=process;
+            start.Environment["PYTHONUTF8"]="1";start.Environment["PYTHONUNBUFFERED"]="1";start.Environment["QWEN_STUDIO_LAUNCH_DIR"]=AppContext.BaseDirectory;start.Environment["QWEN_STUDIO_DATA"]=data;start.Environment["QWEN_STUDIO_TOKEN"]=token;start.Environment["NO_PROXY"]="127.0.0.1,localhost";
+            var process=new Process{StartInfo=start,EnableRaisingEvents=true};backend=process;backendPython=Python;
             process.ErrorDataReceived+=(_,e)=>{if(e.Data!=null)Log(e.Data);};
             process.Exited+=(_,_)=>{if(!shuttingDown&&IsHandleCreated)BeginInvoke(async ()=>{if(backend!=process)return;environmentBusy=false;environmentReady=false;origin="";if(!environmentVisible)ShowEnvironment(true);else{await Put(new("service","本地服务","fail","本地服务未能启动，请查看详细日志。"));await SendEnvironment(new{busy=false,ready=false,message="本地服务未能启动，请查看详细日志。"});}});};
             process.Start();process.BeginErrorReadLine();

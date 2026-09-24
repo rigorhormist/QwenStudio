@@ -303,7 +303,7 @@ class Handler(BaseHTTPRequestHandler):
         path=unquote(urlparse(self.path).path)
         try:
             if path=='/api/status': return self.send_json(status())
-            if path=='/api/health': return self.send_json({'service':'qwen-studio','version':'2.2.2-windows','pid':os.getpid()})
+            if path=='/api/health': return self.send_json({'service':'qwen-studio','version':'2.2.3-windows','pid':os.getpid()})
             if path=='/api/preferences': return self.send_json(preferences())
             if path=='/api/sessions':
                 with connection() as c: return self.send_json([dict(x) for x in c.execute('SELECT * FROM sessions ORDER BY updated DESC')])
