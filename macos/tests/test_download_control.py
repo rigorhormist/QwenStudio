@@ -16,6 +16,8 @@ class DownloadControlTest(unittest.TestCase):
             parent.cmdline.return_value=['python',script,str(root)]
             with patch.object(download_control.psutil,'Process',return_value=parent),patch.object(download_control.psutil,'wait_procs',return_value=([],[])):
                 self.assertTrue(download_control.stop_download(root));parent.terminate.assert_called_once();child.terminate.assert_called_once()
+                self.assertFalse((root/'.download.pid').exists())
+                (root/'.download.pid').write_text('123')
                 parent.reset_mock();parent.cmdline.return_value=['python',script,str(root/'unrelated')]
                 self.assertFalse(download_control.stop_download(root));parent.terminate.assert_not_called()
                 parent.cmdline.return_value=['python','unrelated.py',str(root)]

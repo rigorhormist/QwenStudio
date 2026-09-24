@@ -23,5 +23,9 @@ def stop_download(root,known_process=None):
             except psutil.NoSuchProcess:pass
         _,alive=psutil.wait_procs(alive,timeout=3)
         if alive:raise RuntimeError('下载进程尚未停止，请稍后重试。')
+        try:
+            marker=root/'.download.pid'
+            if int(marker.read_text(encoding='utf-8'))==pid:marker.unlink()
+        except (OSError,ValueError):pass
         return True
     except (OSError,ValueError,IndexError,psutil.NoSuchProcess):return False

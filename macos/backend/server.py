@@ -8,6 +8,7 @@ from model_sources import SOURCES, validate_source
 from environment_probe import is_environment_error
 from enhancer_assets import EnhancerAssets, TARGETS
 from generation_options import validate_options, resolve_size, exact_text, protect_text
+import psutil
 from image_jobs import run_image_job
 from download_control import stop_download
 from storage_locations import ModelLocations, model_ready, check_download_parent, BUSY
@@ -123,8 +124,9 @@ def model_status():
     ready=model_ready(MODEL,'image',DATA)
     running=DOWNLOAD is not None and DOWNLOAD.poll() is None
     try:
-        pid=int((MODEL/'.download.pid').read_text(encoding='utf-8'));os.kill(pid,0);running=True
-    except (OSError,ValueError): pass
+        process=psutil.Process(int((MODEL/'.download.pid').read_text(encoding='utf-8')))
+        running=running or str(ROOT/'backend/download.py') in process.cmdline()
+    except (OSError,ValueError,psutil.Error): pass
     log=DATA/'download.log'
     error=''
     if not running and DOWNLOAD is not None and DOWNLOAD.poll() not in (None,0):
