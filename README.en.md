@@ -77,7 +77,7 @@ git clone https://github.com/rigorhormist/QwenStudio.git
 cd QwenStudio
 ```
 
-Mac builds require Xcode Command Line Tools. Run `./build.sh` and `./setup.command` in `macos`. Windows builds require the .NET 10 SDK. Run `build.ps1` in `windows` to build `app/Qwen Studio.exe`. Dependency setup is handled inside the app. Building the desktop shell does not require model weights.
+Mac builds require Xcode Command Line Tools. Run `./build.sh` in `macos`, then complete the environment setup inside the App. Windows builds require the .NET 10 SDK. Run `build.ps1` in `windows` to build `app/Qwen Studio.exe`. Dependency setup is handled inside the app. Building the desktop shell does not require model weights.
 
 ```text
 macos/       AppKit shell, MPS backend and web interface

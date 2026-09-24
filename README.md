@@ -14,7 +14,7 @@ Qwen Studio 是为解决 Ollama 等平台暂不支持 Qwen Image 2.1 情况的�
 
 ## 下载与开始使用
 
-前往 [Releases](https://github.com/rigorhormist/QwenStudio/releases/latest) 下载对应平台的 ZIP。首次安装需要联网下载 Python 依赖，模型文件随后在应用中单独下载。
+前往 [Releases](https://github.com/rigorhormist/QwenStudio/releases/latest) 下载 Windows EXE 或 Mac ZIP。首次安装需要联网下载 Python 依赖，模型文件随后在应用中单独下载。
 
 | 平台 | 下载包 | 首次使用 |
 | --- | --- | --- |
@@ -75,7 +75,7 @@ git clone https://github.com/rigorhormist/QwenStudio.git
 cd QwenStudio
 ```
 
-Mac 需要 Xcode Command Line Tools；在 `macos` 目录运行 `./build.sh` 和 `./setup.command`。Windows 需要 .NET 10 SDK；在 `windows` 目录运行 `build.ps1`，生成 `app/Qwen Studio.exe`，环境设置全部在软件内完成。构建桌面程序不需要下载模型。
+Mac 需要 Xcode Command Line Tools；在 `macos` 目录运行 `./build.sh`，然后在 App 内完成环境设置。Windows 需要 .NET 10 SDK；在 `windows` 目录运行 `build.ps1`，生成 `app/Qwen Studio.exe`，环境设置全部在软件内完成。构建桌面程序不需要下载模型。
 
 ```text
 macos/       AppKit 桌面外壳、MPS 后端和界面
