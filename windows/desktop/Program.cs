@@ -31,6 +31,8 @@ internal sealed partial class StudioWindow : Form
     readonly StudioTitleBar titlebar;
     readonly string root;
     readonly string data;
+    string? configurationError;
+    static string DefaultData => Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),"QwenStudio");
     readonly string token = Guid.NewGuid().ToString("N") + Guid.NewGuid().ToString("N");
     Process? backend;
     string origin = "";
@@ -40,7 +42,7 @@ internal sealed partial class StudioWindow : Form
     public StudioWindow()
     {
         root = FindRoot();
-        data = Environment.GetEnvironmentVariable("QWEN_STUDIO_DATA") ?? LocalSetting("data") ?? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),"QwenStudio");
+        data = Environment.GetEnvironmentVariable("QWEN_STUDIO_DATA") ?? LocalSetting("data") ?? DefaultData;
         try { Directory.CreateDirectory(data); } catch { /* The bootstrap page reports storage failures. */ }
         LoadLanguage();
         AutoScaleDimensions = new SizeF(96, 96);
@@ -71,10 +73,32 @@ internal sealed partial class StudioWindow : Form
 
     string? LocalSetting(string key)
     {
-        var file=Path.Combine(root,"settings.local.json");
-        if(!File.Exists(file))return null;
-        using var settings=JsonDocument.Parse(File.ReadAllText(file,Encoding.UTF8));
-        return settings.RootElement.TryGetProperty(key,out var value)&&value.ValueKind==JsonValueKind.String ? value.GetString() : null;
+        var files=new[]{Path.Combine(root,"settings.local.json"),Path.Combine(DefaultData,"locations.json")};
+        foreach(var file in files){
+            if(!File.Exists(file))continue;
+            try{
+                using var settings=JsonDocument.Parse(File.ReadAllText(file,Encoding.UTF8));
+                if(settings.RootElement.ValueKind!=JsonValueKind.Object)throw new FormatException("Expected a JSON object.");
+                if(settings.RootElement.TryGetProperty(key,out var value)){
+                    if(value.ValueKind!=JsonValueKind.String||string.IsNullOrWhiteSpace(value.GetString()))throw new FormatException("Expected a non-empty path: "+key);
+                    return value.GetString();
+                }
+            }catch(Exception error){configurationError=file+"\n"+error.Message;return null;}
+        }
+        return null;
+    }
+
+    void RememberLocations()
+    {
+        // Shell overrides are temporary and must not change another installation's paths.
+        if(new[]{"QWEN_STUDIO_DATA","QWEN_STUDIO_MODEL","QWEN_STUDIO_PYTHON"}.Any(key=>!string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable(key))))return;
+        try{
+            Directory.CreateDirectory(DefaultData);
+            var model=LocalSetting("model")??Path.Combine(data,"models","Qwen-Image-2.1");
+            var temporary=Path.Combine(DefaultData,"locations-"+Guid.NewGuid()+".tmp");
+            File.WriteAllText(temporary,JsonSerializer.Serialize(new{data=Path.GetFullPath(data),model=Path.GetFullPath(model)}),new UTF8Encoding(false));
+            File.Move(temporary,Path.Combine(DefaultData,"locations.json"),true);
+        }catch(Exception error){Log("Could not remember storage locations: "+error.Message);}
     }
 
     static string FindRoot()
@@ -123,7 +147,7 @@ internal sealed partial class StudioWindow : Form
         e.Cancel=true;shuttingDown=true;
         Enabled=false;
         lifetime.Cancel();
-        if(environmentProcess is {HasExited:false})environmentProcess.Kill(true);
+        try{if(environmentProcess is {HasExited:false})environmentProcess.Kill(true);}catch(InvalidOperationException){}
         try {
             if(backend is {HasExited:false}){
                 using var client=new HttpClient(new HttpClientHandler{UseProxy=false}){Timeout=TimeSpan.FromSeconds(3)};

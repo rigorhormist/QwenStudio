@@ -11,6 +11,7 @@ internal sealed partial class StudioWindow
     readonly Dictionary<string,CheckItem> checks=new();
     Dictionary<string,string> translations=new();
     Process? environmentProcess;
+    CancellationTokenSource? environmentOperation;
     bool environmentVisible=true,environmentBusy,environmentReady,manualCheck;
     string language="auto";
     Panel? fallback;
@@ -33,7 +34,7 @@ internal sealed partial class StudioWindow
         catch(Exception error){Log(error.ToString());_ = SendEnvironment(new {message="语言设置无法保存，请检查本地存储。"});}
     }
     bool IsEnvironment(string url)=>Uri.TryCreate(url,UriKind.Absolute,out var uri)&&uri.GetLeftPart(UriPartial.Authority)==EnvironmentOrigin&&uri.AbsolutePath=="/environment.html";
-    Task SendEnvironment(object value)=>environmentVisible?Script("window.environmentUpdate?.("+JsonSerializer.Serialize(value)+")"):Task.CompletedTask;
+    Task SendEnvironment(object value)=>environmentVisible&&!shuttingDown?Script("window.environmentUpdate?.("+JsonSerializer.Serialize(value)+")"):Task.CompletedTask;
     async Task Initialize()
     {
         try {
@@ -84,9 +85,15 @@ internal sealed partial class StudioWindow
     async void HandleEnvironmentAction(string? action,JsonElement payload)
     {
         try {
-            if(action=="environmentReady")await CheckEnvironment();
+            if(action=="environmentReady"){
+                if(environmentBusy){
+                    await SendEnvironment(new{reset=true,busy=true,ready=false,language,platform="windows"});
+                    foreach(var check in checks.Values.ToArray())await SendEnvironment(new{item=check});
+                }else await CheckEnvironment();
+            }
             if(action=="environmentCheck"){manualCheck=true;await CheckEnvironment();}
             if(action=="environmentInstall")await InstallEnvironment();
+            if(action=="environmentCancel")environmentOperation?.Cancel();
             if(action=="environmentOpen")await OpenStudio();
             if(action=="environmentHelp"){
                 var help=payload.GetProperty("help").GetString();
@@ -103,10 +110,13 @@ internal sealed partial class StudioWindow
         start.Environment["QWEN_STUDIO_DATA"]=data;start.Environment["PYTHONUTF8"]="1";start.Environment["PYTHONUNBUFFERED"]="1";start.Environment["PIP_NO_INPUT"]="1";
         using var process=new Process{StartInfo=start};environmentProcess=process;
         try{
-            process.Start();using var deadline=CancellationTokenSource.CreateLinkedTokenSource(lifetime.Token);deadline.CancelAfter(TimeSpan.FromSeconds(timeout));
-            async Task Read(StreamReader reader){while(await reader.ReadLineAsync(deadline.Token) is string value)line(value);}
+            process.Start();using var deadline=CancellationTokenSource.CreateLinkedTokenSource(lifetime.Token,environmentOperation?.Token??CancellationToken.None);deadline.CancelAfter(TimeSpan.FromSeconds(timeout));
+            async Task Read(StreamReader reader){while(await reader.ReadLineAsync(deadline.Token) is string value){Log(value);line(value);}}
             try{await Task.WhenAll(Read(process.StandardOutput),Read(process.StandardError),process.WaitForExitAsync(deadline.Token));}
-            catch(OperationCanceledException){if(!process.HasExited)process.Kill(true);line(T("检测超时，请重试或修复环境。"));return -1;}
+            catch(OperationCanceledException){
+                if(!process.HasExited){process.Kill(true);await process.WaitForExitAsync().WaitAsync(TimeSpan.FromSeconds(8));}
+                line(T(environmentOperation?.IsCancellationRequested==true?"已停止。原有环境保持不变。":"检测超时，请重试或修复环境。"));return -1;
+            }
             return process.ExitCode;
         }finally{environmentProcess=null;}
     }
@@ -133,7 +143,15 @@ internal sealed partial class StudioWindow
     async Task CheckEnvironment()
     {
         if(environmentBusy)return;environmentBusy=true;environmentReady=false;checks.Clear();
-        await SendEnvironment(new{reset=true,busy=true,ready=false,message="正在检测…",language,platform="windows"});
+        environmentOperation?.Dispose();environmentOperation=new();
+        var elapsed=Stopwatch.StartNew();Log("Environment check started. Runtime: "+Python);
+        await SendEnvironment(new{reset=true,busy=true,ready=false,canCancel=true,message="正在检测…",language,platform="windows"});
+        configurationError=null;
+        var configuredData=Environment.GetEnvironmentVariable("QWEN_STUDIO_DATA")??LocalSetting("data")??DefaultData;
+        if(!string.Equals(Path.GetFullPath(configuredData),Path.GetFullPath(data),StringComparison.OrdinalIgnoreCase))configurationError=T("存储位置已更改，请重启应用。");
+        // Read both keys before admission; malformed local settings must not look like an empty library.
+        _ = LocalSetting("model");
+        if(configurationError!=null)await Put(new("configuration","存储位置设置","fail","无法读取存储位置设置，请检查配置文件。",diagnostic:configurationError));
         var supported=Environment.Is64BitProcess&&RuntimeInformation.OSArchitecture==Architecture.X64&&OperatingSystem.IsWindowsVersionAtLeast(10);
         await Put(new("system","系统与架构",supported?"pass":"fail",supported?RuntimeInformation.OSDescription:"需要 64 位 Windows 10 或更新版本。"));
         await Put(new("display","桌面显示组件","pass","Microsoft Edge WebView2"));
@@ -141,38 +159,54 @@ internal sealed partial class StudioWindow
         catch{await Put(new("storage","本地存储","fail","无法写入数据目录，请检查磁盘和权限。"));}
         var complete=false;var exit=-1;
         if(await FindPython()) {
-            exit=await Run(Python,["-X","utf8",Path.Combine(root,"backend","environment_probe.py"),"--data",data],960,line=>{
+            exit=await Run(Python,["-X","utf8",Path.Combine(root,"backend","environment_probe.py"),"--data",data],180,line=>{
                 try{
                     using var json=JsonDocument.Parse(line);var item=json.RootElement;
                     if(item.GetProperty("type").GetString()=="complete")complete=true;
                     else if(item.GetProperty("type").GetString()=="check"){
                         var check=JsonSerializer.Deserialize<CheckItem>(line)!;if(check.id=="python")check=check with {detail=check.detail+"\n"+Python};checks[check.id]=check;_ = SendEnvironment(new{item=check});
-                        if(check.diagnostic!=null)_ = SendEnvironment(new{log=check.title+": "+check.diagnostic});
                     }
                 }catch{_ = SendEnvironment(new{log=line});}
             });
         }
         environmentBusy=false;environmentReady=exit==0&&complete&&checks.Count>0&&checks.Values.Where(i=>i.required).All(i=>i.state=="pass");
+        if(environmentReady&&string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable("QWEN_STUDIO_PYTHON"))){
+            try{
+                RememberLocations();
+                var temporary=Path.Combine(data,"runtime-path-"+Guid.NewGuid()+".tmp");
+                File.WriteAllText(temporary,JsonSerializer.Serialize(new{python=Python}),new UTF8Encoding(false));
+                File.Move(temporary,Path.Combine(data,"runtime-path.json"),true);
+            }catch(Exception error){Log("Could not remember the selected runtime: "+error.Message);}
+        }
+        var cancelled=environmentOperation.IsCancellationRequested;
+        if(!complete){
+            foreach(var check in checks.Values.Where(c=>c.state=="checking").ToArray())await Put(check with{state="fail",detail=cancelled?"已停止":"检测超时，请重试或修复环境。"});
+        }
         if(!complete&&(!checks.TryGetValue("python",out var python)||python.state!="fail"))await Put(new("probe","依赖检查","fail","依赖检查进程退出，请尝试修复环境。"));
-        await SendEnvironment(new{busy=false,ready=environmentReady,message=""});
+        Log($"Environment check finished in {elapsed.Elapsed.TotalSeconds:F1}s. Ready={environmentReady}; cancelled={cancelled}.");
+        await SendEnvironment(new{busy=false,ready=environmentReady,message=cancelled?"已停止。原有环境保持不变。":""});
         if(environmentReady&&!manualCheck&&File.Exists(Path.Combine(data,"environment-v1.ready")))await OpenStudio();
     }
     async Task InstallEnvironment()
     {
-        if(environmentBusy)return;environmentBusy=true;environmentReady=false;manualCheck=true;
-        await SendEnvironment(new{busy=true,ready=false,message="正在安装依赖…"});
+        if(environmentBusy)return;
+        if(environmentReady){await SendEnvironment(new{busy=false,ready=true,message="环境正常，无需重新安装。"});return;}
+        environmentBusy=true;environmentReady=false;manualCheck=true;
+        environmentOperation?.Dispose();environmentOperation=new();
+        await SendEnvironment(new{busy=true,ready=false,canCancel=true,message="正在安装依赖…"});
         var script="[Console]::OutputEncoding=[System.Text.UTF8Encoding]::new($false); & '"+Path.Combine(root,"setup.ps1").Replace("'","''")+"'";
         if(!string.IsNullOrWhiteSpace(detectedPython))script+=" -Python '"+detectedPython.Replace("'","''")+"'";
         var encoded=Convert.ToBase64String(Encoding.Unicode.GetBytes(script));
+        Log("Dependency repair started. Existing runtime will be preserved.");
         var code=await Run("powershell.exe",["-NoProfile","-ExecutionPolicy","Bypass","-EncodedCommand",encoded],7200,line=>{_ = SendEnvironment(new{log=line});});
         environmentBusy=false;
-        if(code==0)await CheckEnvironment();else await SendEnvironment(new{busy=false,ready=false,message="安装未完成，请查看详细日志后重试。"});
+        if(code==0)await CheckEnvironment();else await SendEnvironment(new{busy=false,ready=false,message=environmentOperation.IsCancellationRequested?"已停止。原有环境保持不变。":"安装未完成，请查看详细日志后重试。"});
     }
     async Task OpenStudio()
     {
         if(!environmentReady||environmentBusy)return;
         if(backend is {HasExited:false}&&origin!=""){EnterStudio();return;}
-        environmentBusy=true;await SendEnvironment(new{busy=true,message="正在启动本地服务…"});
+        environmentBusy=true;await SendEnvironment(new{busy=true,canCancel=false,message="正在启动本地服务…"});
         try{
             var start=new ProcessStartInfo(Python){WorkingDirectory=root,UseShellExecute=false,CreateNoWindow=true,RedirectStandardOutput=true,RedirectStandardError=true,StandardOutputEncoding=Encoding.UTF8,StandardErrorEncoding=Encoding.UTF8};
             foreach(var argument in new[]{"-X","utf8",Path.Combine(root,"backend","server.py")})start.ArgumentList.Add(argument);

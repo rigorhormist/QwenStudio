@@ -114,8 +114,30 @@ function Find-StudioPython([string[]]$Preferred = @(), [string]$Explicit = '') {
     return [pscustomobject]@{found=$false;python=$null;rejected=$rejected}
 }
 
+function Get-StudioDataPath {
+    if ($env:QWEN_STUDIO_DATA) { return $env:QWEN_STUDIO_DATA }
+    foreach ($file in @((Join-Path $PSScriptRoot 'settings.local.json'), (Join-Path $env:LOCALAPPDATA 'QwenStudio\locations.json'))) {
+        if (-not (Test-Path -LiteralPath $file -PathType Leaf)) { continue }
+        $settings = Get-Content -LiteralPath $file -Raw -Encoding UTF8 -ErrorAction Stop | ConvertFrom-Json -ErrorAction Stop
+        if ($settings.data -is [string] -and $settings.data.Trim()) { return [string]$settings.data }
+    }
+    return (Join-Path $env:LOCALAPPDATA 'QwenStudio')
+}
+
+function Get-StudioRuntimeCandidates {
+    # Per-user selection survives extracting a newer release to another folder.
+    foreach ($directory in @((Get-StudioDataPath), $PSScriptRoot)) {
+        try {
+            $value = (Get-Content -LiteralPath (Join-Path $directory 'runtime-path.json') -Raw -Encoding UTF8 -ErrorAction Stop | ConvertFrom-Json).python
+            if ($value -is [string] -and $value.Trim()) {
+                if ([IO.Path]::IsPathRooted($value)) { $value } else { Join-Path $directory $value }
+            }
+        } catch { Write-Verbose $_.Exception.Message }
+    }
+    Join-Path $PSScriptRoot '.venv\Scripts\python.exe'
+}
+
 if ($AsJson) {
     [Console]::OutputEncoding = New-Object System.Text.UTF8Encoding($false)
-    $runtime = Join-Path $PSScriptRoot '.venv\Scripts\python.exe'
-    Find-StudioPython -Preferred @($runtime) -Explicit $env:QWEN_STUDIO_PYTHON | ConvertTo-Json -Depth 5 -Compress
+    Find-StudioPython -Preferred @(Get-StudioRuntimeCandidates) -Explicit $env:QWEN_STUDIO_PYTHON | ConvertTo-Json -Depth 5 -Compress
 }

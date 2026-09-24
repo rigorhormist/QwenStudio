@@ -24,6 +24,7 @@ function renderEnhancerDownloads(){
 function promptDetails(meta){
  const details=document.createElement('details');details.className='prompt-details';
  const summary=document.createElement('summary');summary.textContent='生成详情';details.append(summary);
+ if(meta.enhancement_warning){const note=document.createElement('p');note.className='muted small';note.textContent=meta.enhancement_warning;details.append(note)}
  for(const [label,value] of [['原始提示词',meta.original_prompt],['增强提示词',meta.enhanced_prompt],['实际提示词',meta.effective_prompt],['随机种子',(meta.seeds||[meta.seed]).join(', ')]]){
   if(value===undefined||value===null)continue;
   const heading=document.createElement('p');heading.className='muted small';heading.textContent=label;
@@ -35,3 +36,23 @@ $('#size').addEventListener('change',()=>{$('#ratio-mode').value='fixed'});
 $('#enhance').addEventListener('change',()=>{if(!$('#enhance').checked&&$('#ratio-mode').value==='auto')$('#ratio-mode').value='fixed'});
 $('#negative-prompt').addEventListener('input',()=>{if(!$('#negative-prompt').value.trim())$('#cfg').value=1;else if(Number($('#cfg').value)<=1)$('#cfg').value=2});
 $('#text-preset').onclick=()=>{$('#size').value='2048,2048';$('#steps').value=40;$('#ratio-mode').value='auto';$('#enhance').checked=true;$('#options-label').textContent='2048 × 2048';$('#exact-text').focus();toast('已选择 2K 和 40 步，请填写图中文字')};
+
+// The reminder owns focus until the user chooses. No prompt is cleared on dismissal.
+const dismissedEnhancerReminders=new Set();
+async function confirmOptionalEnhancer(target){
+ if(dismissedEnhancerReminders.has(target))return 'continue';
+ const dialog=$('#enhancer-reminder');dialog.returnValue='cancel';
+ $('#enhancer-reminder-copy').textContent=target==='pe-i2i'?'尚未下载改图增强模型。可以直接使用当前提示词改图。':'尚未下载生图增强模型。可以直接使用当前提示词生图。';
+ $('#enhancer-reminder-hide').checked=false;
+ return new Promise(resolve=>{
+  $('#enhancer-reminder-continue').onclick=()=>dialog.close('continue');
+  $('#enhancer-reminder-download').onclick=()=>dialog.close('download');
+  dialog.addEventListener('close',()=>{
+   if(dialog.returnValue==='continue'&&$('#enhancer-reminder-hide').checked)dismissedEnhancerReminders.add(target);
+   if(dialog.returnValue==='cancel')$('#prompt').focus();
+   resolve(dialog.returnValue);
+  },{once:true});
+  StudioI18n.render();dialog.showModal();
+  motion(dialog,[{opacity:0,transform:'translateY(8px) scale(.98)'},{opacity:1,transform:'none'}]);
+ });
+}

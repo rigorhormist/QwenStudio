@@ -18,8 +18,8 @@ Download the ZIP for your platform from [Releases](https://github.com/rigorhormi
 
 | Platform | Package | First launch |
 | --- | --- | --- |
-| Windows x64 | [QwenStudio-2.2.1-windows-x64.zip](https://github.com/rigorhormist/QwenStudio/releases/download/v2.2.1/QwenStudio-2.2.1-windows-x64.zip) | Extract, open `start.cmd`, and follow the in-app environment check |
-| Mac Apple Silicon | [QwenStudio-2.2.1-macos-arm64.zip](https://github.com/rigorhormist/QwenStudio/releases/download/v2.2.1/QwenStudio-2.2.1-macos-arm64.zip) | Extract, open `Qwen Studio.app`, and follow the environment check |
+| Windows x64 | [QwenStudio-2.2.2-windows-x64.zip](https://github.com/rigorhormist/QwenStudio/releases/download/v2.2.2/QwenStudio-2.2.2-windows-x64.zip) | Extract, open `start.cmd`, and follow the in-app environment check |
+| Mac Apple Silicon | [QwenStudio-2.2.2-macos-arm64.zip](https://github.com/rigorhormist/QwenStudio/releases/download/v2.2.2/QwenStudio-2.2.2-macos-arm64.zip) | Extract, open `Qwen Studio.app`, and follow the environment check |
 
 Packages include the desktop application but **exclude Python, model weights and Ollama**. The Windows package includes the .NET runtime. Mac Python dependencies live in the application data directory, so the App can move to Applications after setup. These releases are not developer-signed or Apple-notarized.
 
@@ -57,7 +57,7 @@ The Mac development machine has an Apple M5 Pro and 48 GB of unified memory. The
 
 The app runs the [official Qwen-Image-2.1 model](https://github.com/QwenLM/Qwen-Image-2.1), available from [ModelScope](https://modelscope.cn/models/Qwen/Qwen-Image-2.1) and [Hugging Face](https://huggingface.co/Qwen/Qwen-Image-2.1). Both sources resolve to the same pinned file set. The downloader verifies SHA-256 hashes before accepting newly downloaded files.
 
-Steps and seed are Diffusers inference parameters. Steps control the number of denoising iterations; the seed controls the initial random noise. The app uses the official recommendation of 40 steps and 2048 × 2048. Prompt enhancement is on by default; download the appropriate PE-T2I or PE-I2I checkpoint before first use. See the [Usage guide](docs/usage.en.md) for controls and limitations.
+Steps and seed are Diffusers inference parameters. Steps control the number of denoising iterations; the seed controls the initial random noise. The app uses the official recommendation of 40 steps and 2048 × 2048. PE-T2I and PE-I2I are optional downloads. If the relevant checkpoint is missing, choose Generate directly in the reminder to use your original prompt. Enhancement runs when enabled and downloaded. See the [Usage guide](docs/usage.en.md) for controls and limitations.
 
 The decoder uses the original FP32 VAE and full-frame decoding to avoid color bands and seams introduced by lower precision or tiled decoding. Intermediate previews are decoded before being resized. The model can still produce incorrect text, unexpected details or images that do not follow the prompt.
 
@@ -91,7 +91,7 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for checks and contribution instructions.
 
 ## Official generation capabilities
 
-The app supports both official prompt enhancers, seven 2K ratios, reference-ratio inheritance, circle/paint annotations and masks, exact lettering, RGBA, negative prompts and multiple images. Download each roughly 18.84 GB enhancer separately in Settings. See the [configuration and lettering guide](docs/generation.en.md) for details and validation limits.
+The app supports both official prompt enhancers, seven 2K ratios, reference-ratio inheritance, circle/paint annotations and masks, exact lettering, RGBA, negative prompts and multiple images. Optionally download either roughly 18.84 GB enhancer in Settings. See the [configuration and lettering guide](docs/generation.en.md) for details and validation limits.
 
 ## License and acknowledgments
 

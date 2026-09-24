@@ -2,7 +2,7 @@
 
 [简体中文](generation.zh-CN.md) | [Home](../README.en.md)
 
-Qwen Studio 2.2.0 uses the Diffusers path for Qwen-Image-2.1, with the published interfaces, recommended settings and Prompt Enhancer profiles. The table separates model capabilities from app controls and hardware limits. Supporting an option does not mean it has been tested on every device.
+Qwen Studio 2.2.2 uses the Diffusers path for Qwen-Image-2.1, with the published interfaces, recommended settings and Prompt Enhancer profiles. The table separates model capabilities from app controls and hardware limits. Supporting an option does not mean it has been tested on every device.
 
 ## Available controls
 
@@ -12,8 +12,8 @@ Qwen Studio 2.2.0 uses the Diffusers path for Qwen-Image-2.1, with the published
 | Single and multiple reference editing | Upload images or continue editing a result; up to 10 references, labeled `<image1>`, `<image2>` in order |
 | Circles, paint and separate masks | Open an image → Annotate areas to edit. Add a marked reference, or the original plus a black-and-white mask with white edit regions |
 | Transparent generation and editing | The transparency switch uses the upstream RGBA prompt format; uploads, inference and PNG files preserve alpha |
-| Official PE-T2I | Enhancement is on by default; text-only tasks use the dedicated generation enhancer |
-| Official PE-I2I | Tasks with references use the editing enhancer, with images placed before text in their original order |
+| Official PE-T2I | Optional download; enabled text-only tasks use this enhancer when available |
+| Official PE-I2I | Optional download; enabled tasks with references use this enhancer, with images before text in their original order |
 | Canvas ratio | Use the enhancer's `wh_ratio` or `ratio_follow`, selected dimensions, or the first reference ratio |
 | Exact wording | Enter literal copy in Text in the image. Quoted wording in the prompt is also preserved in its original language |
 | Negative prompts and CFG | Advanced options; CFG defaults to 1. A negative prompt requires CFG above 1 |
@@ -51,7 +51,7 @@ These are the official fine-tuned Qwen3.5-VL 9B checkpoints. The app does not su
 | max_new_tokens | 16256 | 24000 |
 | Reference image pixel limit | No references | 1024 × 1024 pixel area per image |
 
-Presence penalty applies only to generated tokens and differs from repetition penalty. An enhancement must contain a complete, valid result and a valid canvas choice. Invalid output stops the task; the app does not feed incomplete JSON or reasoning into the image model. You can explicitly turn enhancement off to use the original prompt.
+Presence penalty applies only to generated tokens and differs from repetition penalty. An enhancement must contain a complete, valid result and a valid canvas choice. If enhancement fails or returns invalid output, the app continues with your original prompt and records a notice in Generation details. Missing weights show a reminder with a Generate directly option. You can also turn enhancement off in image parameters.
 
 Enhancement and diffusion run in separate, sequential processes. Enhancer allocations are released before image weights load. Windows supports automatic CUDA/CPU placement for the enhancer; Mac uses MPS. Loading time and memory use, especially with long prompts, depend on the device.
 

@@ -10,16 +10,16 @@ class QueueTest(unittest.TestCase):
    s=importlib.util.module_from_spec(spec);spec.loader.exec_module(s)
    with s.connection() as c:c.execute('INSERT INTO sessions VALUES(?,?,?,?)',('s','新会话',0,0))
    s.model_status=lambda:{'ready':True}
-   entered=[];gates={}
+   entered=[];gates={};payloads=[]
    def worker(job,payload):
-    entered.append(job['id']);gates[job['id']]=threading.Event();gates[job['id']].wait(3)
+    payloads.append(payload);entered.append(job['id']);gates[job['id']]=threading.Event();gates[job['id']].wait(3)
     job['state']='done'
     with s.LOCK:s.ACTIVE=None;s.advance_queue()
    s.run_job=worker
-   def submit(text):return s.start_job(dict(session_id='s',prompt=text,mode='image',width=512,height=512,enhance=False))
+   def submit(text):return s.start_job(dict(session_id='s',prompt=text,mode='image',width=512,height=512,enhance=True))
    first=submit('first');second=submit('second');third=submit('third')
    self.assertEqual(first['state'],'running');self.assertEqual(second['state'],'queued')
-   self.assertEqual(len(entered),1);self.assertEqual(len(s.read_session('s')['messages']),3)
+   self.assertEqual(len(entered),1);self.assertFalse(payloads[0]['enhance']);self.assertTrue(first['enhancement_warning']);self.assertEqual(len(s.read_session('s')['messages']),3)
    s.cancel_job(second['id']);self.assertEqual(second['state'],'cancelled')
    gates[first['id']].set()
    for _ in range(100):

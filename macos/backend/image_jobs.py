@@ -52,16 +52,24 @@ def run_image_job(job,payload,root,data,model,enhancers):
     from PIL import Image
     config={**payload,'model_path':str(model),'data':str(data),'job_id':job['id']}
     config['seed']=payload['seed'] if payload['seed']>=0 else secrets.randbelow(2**32)
-    rewrite=None;original=payload['prompt']
+    rewrite=None;original=payload['prompt'];warning=payload.get('enhancement_warning')
     if payload.get('enhance',True):
         target='pe-i2i' if payload.get('images') else 'pe-t2i'
-        config['enhancer_path']=str(enhancers.path(target))
-        result=run_child('enhancer_worker.py',config,job,root,data,'.pe')
-        rewrite=result.get('rewrite',{})
-        validate_rewrite(rewrite,len(payload.get('images',[])))
-        config['prompt']=rewrite['positive_prompt']
-    else:
-        config['prompt']=protect_text(original,exact_text(original,payload.get('exact_text','')))
+        if enhancers.status(target)['ready']:
+            config['enhancer_path']=str(enhancers.path(target))
+            try:
+                result=run_child('enhancer_worker.py',config,job,root,data,'.pe')
+                rewrite=result.get('rewrite',{})
+                validate_rewrite(rewrite,len(payload.get('images',[])))
+            except InterruptedError:raise
+            except (RuntimeError,ValueError,OSError):
+                rewrite=None
+                warning='提示词增强未完成，已使用原始提示词生成。'
+                # Optional enhancement failures must not redirect the whole app to setup.
+                job.pop('error',None);job.pop('environment_error',None)
+        else:warning='未下载增强模型，本次使用原始提示词。'
+    config['prompt']=rewrite['positive_prompt'] if rewrite else protect_text(original,exact_text(original,payload.get('exact_text','')))
+    if warning:job['enhancement_warning']=warning
     sizes=[]
     for name in payload.get('images',[]):
         with Image.open(data/'images'/name) as image:sizes.append(image.size)
@@ -72,7 +80,7 @@ def run_image_job(job,payload,root,data,model,enhancers):
     if not images:raise RuntimeError('没有收到生成图片。')
     meta={key:config.get(key) for key in ('width','height','steps','seed','count','transparent','negative_prompt','cfg','ratio_mode')}
     meta.update(job_id=job['id'],mode='image',seconds=round(time.time()-job['started']),
-        original_prompt=original,effective_prompt=result.get('effective_prompt',config['prompt']),
+        enhancement_warning=warning,original_prompt=original,effective_prompt=result.get('effective_prompt',config['prompt']),
         enhanced_prompt=rewrite['positive_prompt'] if rewrite else None,
         enhancer=('PE-I2I' if payload.get('images') else 'PE-T2I') if rewrite else None,
         seeds=result.get('seeds',[config['seed']]),reference_images=payload.get('images',[]))

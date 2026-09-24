@@ -24,6 +24,13 @@ class EnvironmentChecks(unittest.TestCase):
         self.assertIn('dependencies',items)
         self.assertIn('pipeline',items)
         self.assertIn('gpu',items)
+    def test_unavailable_optional_enhancer_does_not_block_entry(self):
+        def check(name):
+            if name=='enhancer':raise ImportError('optional interface missing')
+            return 'ok'
+        _,items=self.collect(check)
+        self.assertTrue(probe.ready(items));self.assertFalse(items['enhancer']['required'])
+        self.assertEqual(items['enhancer']['state'],'optional')
     def test_missing_import_and_gpu_block(self):
         for broken in ('diffusers','gpu','dependencies'):
             def check(name):

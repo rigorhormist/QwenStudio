@@ -16,20 +16,21 @@
   for(const item of items.values())row(item);
   $('#language').value=state.language;
   $('#continue').disabled=state.busy||!state.ready;
-  $('#recheck').disabled=$('#install').disabled=state.busy;
+  $('#recheck').disabled=state.busy;$('#install').disabled=state.busy||state.ready;
+  $('#cancel').hidden=!state.busy||state.canCancel===false;
   $('#summary').textContent=state.message||(state.busy?'正在检测…':state.ready?'必需项目已通过，可以开始使用。':'部分必需项目尚未通过，请按提示处理后重新检测。');
   $('#webview-help').hidden=state.platform!=='windows';$('#gpu-help').hidden=state.platform==='macos';
   StudioI18n.render();
  }
  window.environmentUpdate=next=>{
-  if(next.reset){items.clear();for(const [id,title] of expected)items.set(id,{id,title,state:'waiting',required:id!=='ollama'})}
+  if(next.reset){items.clear();for(const [id,title] of expected)items.set(id,{id,title,state:'waiting',required:!['ollama','enhancer'].includes(id)})}
   if(next.item){items.set(next.item.id,next.item);if(next.item.diagnostic)next.log=(next.log||'')+'\n'+next.item.title+': '+next.item.diagnostic;}
   if(next.log){lastLog=(lastLog+'\n'+next.log).slice(-48000);$('#log').textContent=lastLog;$('#log').scrollTop=$('#log').scrollHeight}
   state={...state,...next};if(StudioI18n.choice!==state.language)StudioI18n.setLanguage(state.language);
   render();
  };
  $('#language').onchange=()=>{state.language=$('#language').value;StudioI18n.setLanguage(state.language);native('languageChanged',{language:state.language});render()};
- $('#recheck').onclick=()=>native('environmentCheck');$('#install').onclick=()=>native('environmentInstall');$('#continue').onclick=()=>{if(!state.busy&&state.ready)native('environmentOpen')};
+ $('#recheck').onclick=()=>native('environmentCheck');$('#install').onclick=()=>native('environmentInstall');$('#cancel').onclick=()=>native('environmentCancel');$('#continue').onclick=()=>{if(!state.busy&&state.ready)native('environmentOpen')};
  document.querySelectorAll('[data-help]').forEach(b=>b.onclick=()=>native('environmentHelp',{help:b.dataset.help}));
  window.environmentUpdate({reset:true,language:StudioI18n.choice});native('environmentReady');
 })();

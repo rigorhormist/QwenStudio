@@ -8,6 +8,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
     var backendPort: Int = 0
     var sidebarButton: NSButton!
     var environmentProcess: Process?
+    var environmentCancelled = false
+    var detectedPython: String?
     var environmentBusy = false
     var environmentReady = false
     var environmentVisible = true
@@ -18,6 +20,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
     lazy var translations = (try? JSONSerialization.jsonObject(with: Data(contentsOf: resources.appendingPathComponent("web/locales.json")))) as? [String: String] ?? [:]
     var resources: URL { Bundle.main.resourceURL! }
     var python: String {
+        if let selected=detectedPython {return selected}
         if let override=ProcessInfo.processInfo.environment["QWEN_STUDIO_PYTHON"] {return override}
         let managed=dataURL.appendingPathComponent("runtime/bin/python3").path
         // Preserve working environments when updating the early bundled-runtime build.
@@ -73,7 +76,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
         for (title,action,key) in [("撤销","undo:","z"),("剪切","cut:","x"),("复制","copy:","c"),("粘贴","paste:","v"),("全选","selectAll:","a")] { edit.addItem(withTitle:t(title),action:Selector(action),keyEquivalent:key) }
         NSApp.mainMenu=menu
     }
-    @objc func about() { let a=NSAlert();a.messageText="Qwen Studio";a.informativeText=t("本地图像与对话工作室")+"\nQwen-Image-2.1 / Diffusers / Ollama\n"+t("版本")+" 2.2.1";a.addButton(withTitle:t("确定"));a.runModal() }
+    @objc func about() { let a=NSAlert();a.messageText="Qwen Studio";a.informativeText=t("本地图像与对话工作室")+"\nQwen-Image-2.1 / Diffusers / Ollama\n"+t("版本")+" 2.2.2";a.addButton(withTitle:t("确定"));a.runModal() }
     @objc func settings(){web.evaluateJavaScript("window.studioAction?.('settings')")}
     @objc func newSession(){web.evaluateJavaScript("window.studioAction?.('new')")}
     @objc func toggleSidebar(){web.evaluateJavaScript("window.studioAction?.('sidebar')")}
@@ -93,7 +96,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
         return item
     }
     func sendEnvironment(_ value: [String: Any]) {
-        guard environmentVisible, let data=try? JSONSerialization.data(withJSONObject:value), let json=String(data:data,encoding:.utf8) else{return}
+        guard environmentVisible && !shuttingDown, let data=try? JSONSerialization.data(withJSONObject:value), let json=String(data:data,encoding:.utf8) else{return}
         web.evaluateJavaScript("window.environmentUpdate?.(\(json))")
     }
     func showEnvironment(manual: Bool = false) {
@@ -109,6 +112,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
     func check(_ id:String,_ title:String,_ passed:Bool,_ detail:String) {
         putCheck(["id":id,"title":title,"state":passed ? "pass":"fail","detail":detail,"required":true])
     }
+    func logEnvironment(_ line:String) {
+        let path=dataURL.appendingPathComponent("desktop.log")
+        if !FileManager.default.fileExists(atPath:path.path){FileManager.default.createFile(atPath:path.path,contents:nil)}
+        if let handle=try? FileHandle(forWritingTo:path){handle.seekToEndOfFile();handle.write(Data((line+"\n").utf8));try? handle.close()}
+    }
     // Run Python and installers away from AppKit. A deadline also bounds broken runtimes.
     func run(_ executable:String,_ arguments:[String],timeout:Double,onLine:@escaping(String)->Void) -> Int32 {
         let process=Process();process.executableURL=URL(fileURLWithPath:executable);process.arguments=arguments
@@ -116,14 +124,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
         var env=ProcessInfo.processInfo.environment;env["QWEN_STUDIO_DATA"]=dataURL.path;env["PYTHONUNBUFFERED"]="1";env["PYTHONUTF8"]="1";env["PYTHONDONTWRITEBYTECODE"]="1";env["PIP_NO_INPUT"]="1"
         process.environment=env
         let pipe=Pipe();process.standardOutput=pipe;process.standardError=pipe
-        DispatchQueue.main.sync { self.environmentProcess=process }
+        let cancelled=DispatchQueue.main.sync { self.environmentProcess=process;return self.environmentCancelled || self.shuttingDown }
+        if cancelled{return -1}
         do{try process.run()}catch{onLine(error.localizedDescription);return -1}
+        if DispatchQueue.main.sync(execute:{self.environmentCancelled || self.shuttingDown}){Self.stopTree(process)}
         let deadline=DispatchWorkItem { if process.isRunning { Self.stopTree(process) } }
         DispatchQueue.global().asyncAfter(deadline:.now()+timeout,execute:deadline)
         var pending=Data()
         while true {
             let chunk=pipe.fileHandleForReading.availableData;if chunk.isEmpty{break};pending.append(chunk)
-            while let i=pending.firstIndex(of:10){let line=String(decoding:pending[..<i],as:UTF8.self);pending.removeSubrange(...i);onLine(line)}
+            while let i=pending.firstIndex(of:10){let line=String(decoding:pending[..<i],as:UTF8.self);pending.removeSubrange(...i);onLine(line);DispatchQueue.main.async {self.logEnvironment(line)}}
         }
         if !pending.isEmpty {onLine(String(decoding:pending,as:UTF8.self))}
         process.waitUntilExit();deadline.cancel();return process.terminationStatus
@@ -136,24 +146,36 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
             kill(pid,SIGTERM)
         }
         stop(process.processIdentifier)
+        DispatchQueue.global().asyncAfter(deadline:.now()+2) {if process.isRunning {kill(process.processIdentifier,SIGKILL)}}
     }
     func checkEnvironment() {
         guard !environmentBusy else{return}
-        environmentBusy=true;environmentReady=false;checks=[:]
-        sendEnvironment(["reset":true,"busy":true,"ready":false,"message":"正在检测…","language":language,"platform":"macos"])
+        environmentBusy=true;environmentReady=false;environmentCancelled=false;detectedPython=nil;checks=[:]
+        logEnvironment("Environment check started.")
+        sendEnvironment(["reset":true,"busy":true,"ready":false,"canCancel":true,"message":"正在检测…","language":language,"platform":"macos"])
         check("system","系统与架构",ProcessInfo.processInfo.operatingSystemVersion.majorVersion>=14,"Apple Silicon / macOS \(ProcessInfo.processInfo.operatingSystemVersionString)")
         check("display","桌面显示组件",true,"WebKit")
         do {try FileManager.default.createDirectory(at:dataURL,withIntermediateDirectories:true);let test=dataURL.appendingPathComponent(".write-check-"+UUID().uuidString);try Data().write(to:test);try FileManager.default.removeItem(at:test);check("storage","本地存储",true,"可以保存会话与图片")}
         catch {check("storage","本地存储",false,"无法写入数据目录，请检查磁盘和权限。")}
-        guard FileManager.default.isExecutableFile(atPath:python) else {
-            check("python","Python 运行环境",false,"未安装应用运行环境，请安装依赖。");finishChecks(false);return
-        }
         DispatchQueue.global().async { [weak self] in
-            guard let self=self else{return};var complete=false
-            let code=self.run(self.python,["-X","utf8",self.resources.appendingPathComponent("backend/environment_probe.py").path,"--data",self.dataURL.path],timeout:960) {line in
+            guard let self=self else{return};var complete=false;var found=""
+            let discovery=self.run("/bin/zsh",[self.resources.appendingPathComponent("find-python.command").path],timeout:90){line in
+                if line.hasPrefix("/") && FileManager.default.isExecutableFile(atPath:line){found=line}
+                else{DispatchQueue.main.async{self.sendEnvironment(["log":line])}}
+            }
+            guard discovery==0 && !found.isEmpty else{
+                DispatchQueue.main.async{self.environmentProcess=nil;self.check("python","Python 运行环境",false,"未找到可用的 Python。安装 Apple Silicon 版 Python 3.10–3.13 后重新检测。");self.finishChecks(false)};return
+            }
+            let selected=found
+            DispatchQueue.main.sync {self.detectedPython=selected}
+            let code=self.run(self.python,["-X","utf8",self.resources.appendingPathComponent("backend/environment_probe.py").path,"--data",self.dataURL.path],timeout:180) {line in
                 if let data=line.data(using:.utf8),let item=(try? JSONSerialization.jsonObject(with:data)) as? [String:Any] {
                     if item["type"] as? String == "complete" {complete=true}
-                    if item["type"] as? String == "check" {DispatchQueue.main.async {self.putCheck(item)}}
+                    if item["type"] as? String == "check" {DispatchQueue.main.async {
+                        var result=item
+                        if item["id"] as? String == "python"{result["detail"]=(item["detail"] as? String ?? "")+"\n"+selected}
+                        self.putCheck(result)
+                    }}
                 } else {DispatchQueue.main.async {self.sendEnvironment(["log":line])}}
             }
             DispatchQueue.main.async {self.environmentProcess=nil;self.finishChecks(code==0 && complete)}
@@ -162,26 +184,34 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
     func finishChecks(_ complete:Bool) {
         environmentBusy=false
         environmentReady=complete && !checks.isEmpty && checks.values.filter {($0["required"] as? Bool) != false}.allSatisfy {$0["state"] as? String == "pass"}
+        if environmentReady && ProcessInfo.processInfo.environment["QWEN_STUDIO_PYTHON"] == nil {
+            do{let record=try JSONSerialization.data(withJSONObject:["python":python]);try record.write(to:dataURL.appendingPathComponent("runtime-path.json"),options:.atomic)}
+            catch{logEnvironment("Could not remember the selected runtime: \(error.localizedDescription)")}
+        }
         if !complete && checks["python"]?["state"] as? String != "fail" {check("probe","依赖检查",false,"依赖检查进程退出，请尝试修复环境。")}
-        sendEnvironment(["busy":false,"ready":environmentReady,"message":""])
+        if !complete {for (id,item) in checks where item["state"] as? String == "checking" {var stopped=item;stopped["state"]="fail";stopped["detail"]=environmentCancelled ? "已停止":"检测超时，请重试或修复环境。";checks[id]=stopped;sendEnvironment(["item":stopped])}}
+        logEnvironment("Environment check finished. Ready=\(environmentReady). Cancelled=\(environmentCancelled).")
+        sendEnvironment(["busy":false,"ready":environmentReady,"message":environmentCancelled ? "已停止。原有环境保持不变。":""])
         if environmentReady && !manualCheck && FileManager.default.fileExists(atPath:dataURL.appendingPathComponent("environment-v1.ready").path) {openStudio()}
     }
     func installEnvironment() {
-        guard !environmentBusy else{return};environmentBusy=true;environmentReady=false;manualCheck=true
-        sendEnvironment(["busy":true,"ready":false,"message":"正在安装依赖…"])
+        guard !environmentBusy else{return}
+        if environmentReady{sendEnvironment(["busy":false,"ready":true,"message":"环境正常，无需重新安装。"]);return}
+        environmentBusy=true;environmentReady=false;environmentCancelled=false;manualCheck=true
+        sendEnvironment(["busy":true,"ready":false,"canCancel":true,"message":"正在安装依赖…"])
         DispatchQueue.global().async { [weak self] in
             guard let self=self else{return}
             let code=self.run("/bin/zsh",[self.resources.appendingPathComponent("setup.command").path],timeout:7200) {line in DispatchQueue.main.async {self.sendEnvironment(["log":line])}}
             DispatchQueue.main.async {
                 self.environmentProcess=nil;self.environmentBusy=false
-                if code==0 {self.checkEnvironment()} else {self.sendEnvironment(["busy":false,"ready":false,"message":"安装未完成，请查看详细日志后重试。"])}
+                if code==0 {self.checkEnvironment()} else {self.sendEnvironment(["busy":false,"ready":false,"message":self.environmentCancelled ? "已停止。原有环境保持不变。":"安装未完成，请查看详细日志后重试。"])}
             }
         }
     }
     func openStudio() {
         guard environmentReady && !environmentBusy else{return}
         if backend?.isRunning == true && backendPort>0 {enterStudio();return}
-        environmentBusy=true;sendEnvironment(["busy":true,"message":"正在启动本地服务…"])
+        environmentBusy=true;sendEnvironment(["busy":true,"canCancel":false,"message":"正在启动本地服务…"])
         let process=Process();process.executableURL=URL(fileURLWithPath:python);process.arguments=[resources.appendingPathComponent("backend/server.py").path];process.currentDirectoryURL=resources
         var env=ProcessInfo.processInfo.environment;env["PYTHONUNBUFFERED"]="1";env["QWEN_STUDIO_DATA"]=dataURL.path;env["PYTHONUTF8"]="1";env["PYTHONDONTWRITEBYTECODE"]="1";process.environment=env
         let output=Pipe();process.standardOutput=output
@@ -247,7 +277,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
         guard isEnvironment || isMain else{return}
         if action=="languageChanged",let value=p["language"] as? String {saveLanguage(value);return}
         if isEnvironment {
-            if action=="environmentReady" {checkEnvironment()}
+            if action=="environmentReady" {if environmentBusy{sendEnvironment(["busy":true,"ready":false,"canCancel":true,"language":language,"platform":"macos","message":"正在检测…"]);for item in checks.values{sendEnvironment(["item":item])}}else{checkEnvironment()}}
+            if action=="environmentCancel" {environmentCancelled=true;manualCheck=true;sendEnvironment(["message":"正在停止…","canCancel":false]);if let process=environmentProcess{Self.stopTree(process)}}
             if action=="environmentCheck" {manualCheck=true;checkEnvironment()}
             if action=="environmentInstall" {installEnvironment()}
             if action=="environmentOpen" {openStudio()}

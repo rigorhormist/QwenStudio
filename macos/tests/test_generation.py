@@ -70,6 +70,7 @@ class GenerationContract(unittest.TestCase):
             root=Path(temp);(root/'images').mkdir();calls=[]
             class Assets:
                 def path(self,target):return root/target
+                def status(self,target):return {"ready":True}
             def child(worker,config,job,*args):
                 calls.append((worker,config.copy()))
                 if worker=='enhancer_worker.py':return {'rewrite':dict(parse_ok=True,positive_prompt='A chart reading 第二次世界大战',wh_ratio='9:16')}
@@ -80,9 +81,28 @@ class GenerationContract(unittest.TestCase):
             self.assertEqual((calls[1][1]['width'],calls[1][1]['height']),(1536,2752))
             self.assertEqual(result['meta']['original_prompt'],p['prompt'])
             self.assertEqual(result['meta']['seeds'],[42,43])
-            with patch('image_jobs.run_child',return_value={'rewrite':{}}) as run:
-                with self.assertRaises(ValueError):run_image_job({'id':'test','started':time.time()},p,root,root,root,Assets())
-                self.assertEqual(run.call_count,1)
+            with patch('image_jobs.run_child',side_effect=[{'rewrite':{}},{'images':['fallback.png']}]) as run:
+                fallback=run_image_job({'id':'test','started':time.time()},p,root,root,root,Assets())
+                self.assertEqual(run.call_count,2)
+                self.assertIsNone(fallback['meta']['enhancer'])
+                self.assertIn(p['prompt'],fallback['meta']['effective_prompt'])
+                self.assertTrue(fallback['meta']['enhancement_warning'])
+    def test_missing_optional_weights_skip_enhancer_and_keep_references(self):
+        from PIL import Image
+        with tempfile.TemporaryDirectory() as temp:
+            root=Path(temp);(root/'images').mkdir();Image.new('RGB',(100,200)).save(root/'images/ref.png')
+            class MissingAssets:
+                def status(self,target):return {'ready':False}
+                def path(self,target):raise AssertionError('Missing weights must not be opened')
+            for refs in ([],['ref.png']):
+                p=dict(prompt='标题“历史”',exact_text='1939 年',width=1024,height=1024,steps=40,seed=42,enhance=True,ratio_mode='fixed',images=refs)
+                with patch('image_jobs.run_child',return_value={'images':['done.png']}) as worker:
+                    result=run_image_job({'id':'test','started':time.time()},p,root,root,root,MissingAssets())
+                worker.assert_called_once();self.assertEqual(worker.call_args.args[0],'worker.py')
+                config=worker.call_args.args[1];self.assertEqual(config['images'],refs)
+                self.assertIn('1939 年',config['prompt']);self.assertIn('历史',config['prompt'])
+                self.assertIsNone(result['meta']['enhancer']);self.assertTrue(result['meta']['enhancement_warning'])
+
     def test_process_final_packet_and_cancel_boundary(self):
         with tempfile.TemporaryDirectory() as temp:
             root=Path(temp);(root/'backend').mkdir();(root/'jobs').mkdir()

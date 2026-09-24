@@ -9,6 +9,7 @@ Assert ($actual -and $actual.compatible) ('The CI Python must be supported: ' + 
 $temp = Join-Path ([IO.Path]::GetTempPath()) ('Qwen discovery ' + [Guid]::NewGuid())
 $registry = 'HKCU:\Software\Python\QwenStudioDiscoveryTest-' + [Guid]::NewGuid()
 $oldPath = $env:PATH
+$oldData = $env:QWEN_STUDIO_DATA
 $originalProbe = (Get-Item Function:Invoke-PythonDiscoveryCommand).ScriptBlock
 try {
     # A real venv, with spaces and an apostrophe, exercises process argument handling.
@@ -18,6 +19,16 @@ try {
     $venvPython = Join-Path $venv 'Scripts\python.exe'
     $found = Find-StudioPython -Preferred @($venvPython)
     Assert ($found.found -and $found.python.executable -eq $venvPython -and $found.python.virtual) 'Prefer an existing working app environment.'
+
+    $env:QWEN_STUDIO_DATA = Join-Path $temp 'persistent data'
+    New-Item -ItemType Directory -Path $env:QWEN_STUDIO_DATA -Force | Out-Null
+    $stateFile = Join-Path $env:QWEN_STUDIO_DATA 'runtime-path.json'
+    @{ python=$venvPython } | ConvertTo-Json | Set-Content -LiteralPath $stateFile -Encoding UTF8
+    $found = Find-StudioPython -Preferred @(Get-StudioRuntimeCandidates)
+    Assert ($found.python.executable -eq $venvPython) 'A new release must find the already repaired runtime.'
+    '{broken pointer' | Set-Content -LiteralPath $stateFile -Encoding UTF8
+    $found = Find-StudioPython -Preferred @(Get-StudioRuntimeCandidates)
+    Assert $found.found 'A malformed pointer must not prevent system discovery.'
 
     $missing = Join-Path $temp 'missing\python.exe'
     $found = Find-StudioPython -Preferred @($missing)
@@ -45,6 +56,7 @@ try {
     Write-Host 'PASS: existing runtime, fresh package, registry without PATH, explicit override, version and architecture.'
 } finally {
     $env:PATH = $oldPath
+    $env:QWEN_STUDIO_DATA = $oldData
     Set-Item Function:Invoke-PythonDiscoveryCommand $originalProbe
     if (Test-Path -LiteralPath $registry) { Remove-Item -LiteralPath $registry -Recurse -Force }
     if (Test-Path -LiteralPath $temp) { Remove-Item -LiteralPath $temp -Recurse -Force }

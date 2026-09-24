@@ -12,6 +12,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from urllib.request import Request, build_opener, ProxyHandler
 
 PACKAGES = ('torch', 'torchvision', 'transformers', 'diffusers', 'accelerate', 'PIL',
@@ -28,10 +29,13 @@ def emit(value):
 
 
 def inspect_child(name):
+    if name == 'cuda-stack':
+        inspect_child('torch')
+        inspect_child('torchvision')
+        return inspect_child('gpu')
     if name == 'dependencies':
-        result=subprocess.run([sys.executable, '-m', 'pip', 'check'],capture_output=True,text=True,encoding='utf-8',errors='replace',timeout=45)
-        if result.returncode: raise RuntimeError((result.stdout+'\n'+result.stderr).strip())
-        return '依赖版本兼容'
+        from runtime_dependencies import check_dependencies
+        return check_dependencies()
     if name == 'pipeline':
         import inspect
         from diffusers import QwenImage21Pipeline, AutoencoderKLQwenImage21
@@ -48,12 +52,17 @@ def inspect_child(name):
         return 'Qwen3.5 / PE-T2I / PE-I2I'
     if name == 'gpu':
         import torch
+        torch.set_num_threads(1)
         if platform.system() == 'Darwin':
+            if not torch.backends.mps.is_built():
+                raise RuntimeError('当前 PyTorch 不含 Metal 支持，请修复依赖。')
             if not torch.backends.mps.is_available():
                 raise RuntimeError('未检测到可用的 Apple GPU。')
             device = 'mps'
             label = 'Apple Metal / MPS'
         else:
+            if torch.version.cuda is None:
+                raise RuntimeError('当前 PyTorch 不含 CUDA 支持，请修复依赖。')
             if not torch.cuda.is_available():
                 raise RuntimeError('未检测到可用的 NVIDIA CUDA GPU。')
             if not torch.cuda.is_bf16_supported():
@@ -66,9 +75,9 @@ def inspect_child(name):
             raise RuntimeError('GPU 基础运算检查失败。')
         return label
     module = importlib.import_module(name)
-    if name in ('torch','transformers'):
+    if name in ('torch','torchvision','transformers'):
         from packaging.version import Version
-        minimum={'torch':'2.4.0','transformers':'5.17.0'}[name]
+        minimum={'torch':'2.9.0','torchvision':'0.24.0','transformers':'5.17.0'}[name]
         if Version(module.__version__)<Version(minimum):raise RuntimeError(f'{name} >= {minimum} is required')
     return str(getattr(module, '__version__', '已安装'))
 
@@ -78,12 +87,14 @@ def run_child(name, timeout=60):
         capture_output=True, text=True, encoding='utf-8', errors='replace', timeout=timeout,
         creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0),
         env={**os.environ, 'HF_HUB_OFFLINE': '1', 'TRANSFORMERS_OFFLINE': '1',
-             'HF_HUB_DISABLE_TELEMETRY': '1', 'PYTHONUTF8': '1'})
+             'HF_HUB_DISABLE_TELEMETRY': '1', 'PYTHONUTF8': '1',
+             'OMP_NUM_THREADS': '1', 'MKL_NUM_THREADS': '1'})
     lines = result.stdout.strip().splitlines()
     try:
         report = json.loads(lines[-1])
     except (ValueError, IndexError):
-        raise RuntimeError('依赖检查进程退出，请尝试修复环境。')
+        diagnostic=(result.stderr or result.stdout).strip()[-1500:]
+        raise RuntimeError(f'依赖检查进程退出 (exit {result.returncode})。\n{diagnostic}')
     if result.returncode or not report.get('ok'):
         raise RuntimeError(report.get('error', '依赖无法加载。'))
     return report['detail']
@@ -100,20 +111,30 @@ def collect(data, check=run_child, opener=None):
         yield record('storage', '本地存储', 'pass', '可以保存会话与图片')
     except OSError:
         yield record('storage', '本地存储', 'fail', '无法写入数据目录，请检查磁盘和权限。')
-    for name in (*PACKAGES, 'dependencies', 'pipeline', 'enhancer', 'gpu'):
+    def inspect(name):
         title = {'dependencies': '依赖完整性', 'pipeline': '图像推理接口', 'enhancer': '提示词增强接口', 'gpu': 'GPU 加速'}.get(name, LABELS.get(name, name))
         key = name if name in ('dependencies', 'pipeline', 'enhancer', 'gpu') else 'package:' + name
-        yield record(key, title, 'checking', '正在检测…')
         try:
             detail = check(name)
-            yield record(key, title, 'pass', detail)
+            return record(key, title, 'pass', detail, name!='enhancer')
         except subprocess.TimeoutExpired:
-            yield record(key, title, 'fail', '检测超时，请重试或修复环境。')
+            return record(key, title, 'optional' if name=='enhancer' else 'fail', '检测超时，请重试或修复环境。', name!='enhancer')
         except Exception as error:
             # Keep upstream diagnostics visible in Details, not in the application copy.
-            value = record(key, title, 'fail', '无法加载，请安装或修复依赖。')
+            value = record(key, title, 'optional' if name=='enhancer' else 'fail', '增强接口不可用；不影响直接生图或改图。' if name=='enhancer' else '无法加载，请安装或修复依赖。', name!='enhancer')
             value['diagnostic'] = str(error)[:1500]
-            yield value
+            return value
+    # Imports remain isolated, but independent checks no longer repeat serially.
+    names=(*PACKAGES, 'dependencies', 'pipeline', 'enhancer', 'gpu')
+    with ThreadPoolExecutor(max_workers=4) as pool:
+        futures=[]
+        for name in names:
+            title={'dependencies':'依赖完整性','pipeline':'图像推理接口','enhancer':'提示词增强接口','gpu':'GPU 加速'}.get(name,LABELS.get(name,name))
+            key=name if name not in PACKAGES else 'package:'+name
+            yield record(key,title,'checking','正在检测…',name!='enhancer')
+            futures.append(pool.submit(inspect,name))
+        for future in as_completed(futures):
+            yield future.result()
     curl = shutil.which('curl.exe') or shutil.which('curl')
     yield record('curl', '模型下载工具', 'pass' if curl else 'fail', 'curl' if curl else '未找到 curl，请修复系统下载工具。')
     try:
@@ -140,7 +161,8 @@ def is_environment_error(error):
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--data', type=Path)
-    parser.add_argument('--check', choices=(*PACKAGES, 'dependencies', 'pipeline', 'enhancer', 'gpu'))
+    parser.add_argument('--check', choices=(*PACKAGES, 'dependencies', 'pipeline', 'enhancer', 'gpu', 'cuda-stack'))
+    parser.add_argument('--summary', action='store_true')
     options = parser.parse_args()
     if options.check:
         try:
@@ -151,5 +173,6 @@ if __name__ == '__main__':
         if options.data is None: parser.error('--data is required')
         items = {}
         for item in collect(options.data):
-            items[item['id']] = item;emit({'type': 'check', **item})
-        emit({'type': 'complete', 'ready': ready(items)})
+            items[item['id']] = item
+            if not options.summary:emit({'type': 'check', **item})
+        emit({'type': 'complete', 'ready': ready(items), **({'items':items} if options.summary else {})})

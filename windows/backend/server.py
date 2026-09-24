@@ -261,7 +261,9 @@ def start_job(p):
         p.setdefault('enhance',True);p.setdefault('ratio_mode','auto')
         validate_options(p)
         target='pe-i2i' if refs else 'pe-t2i'
-        if p['enhance'] and not ENHANCERS.status(target)['ready']:raise ValueError('请先下载本次任务所需的提示词增强模型。')
+        if p['enhance'] and not ENHANCERS.status(target)['ready']:
+            p['enhance']=False
+            p['enhancement_warning']='未下载增强模型，本次使用原始提示词。'
     else:
         if refs: raise ValueError('参考图用于“图像”模式，请先切换模式。')
         with ollama('/api/tags') as r: available=[m['name'] for m in json.load(r)['models']]
@@ -276,7 +278,7 @@ def start_job(p):
         if len(QUEUE)>=10: raise ValueError('已有 10 条消息排队，请稍后再发送。')
         jid=uuid.uuid4().hex
         job={'id':jid,'session_id':p['session_id'],'state':'queued','stage':'等待前一个任务完成','progress':0,'text':'','started':time.time(),'mode':p['mode']}
-        if p['mode']=='image': job.update(width=p['width'],height=p['height'])
+        if p['mode']=='image': job.update(width=p['width'],height=p['height'],enhancement_warning=p.get('enhancement_warning'))
         JOBS[jid]=job
         p['prompt']=prompt
         message(p['session_id'],'user',prompt,refs,{'mode':p['mode'],'job_id':jid})
@@ -301,7 +303,7 @@ class Handler(BaseHTTPRequestHandler):
         path=unquote(urlparse(self.path).path)
         try:
             if path=='/api/status': return self.send_json(status())
-            if path=='/api/health': return self.send_json({'service':'qwen-studio','version':'2.2.0-windows','pid':os.getpid()})
+            if path=='/api/health': return self.send_json({'service':'qwen-studio','version':'2.2.2-windows','pid':os.getpid()})
             if path=='/api/preferences': return self.send_json(preferences())
             if path=='/api/sessions':
                 with connection() as c: return self.send_json([dict(x) for x in c.execute('SELECT * FROM sessions ORDER BY updated DESC')])

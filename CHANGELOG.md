@@ -1,5 +1,15 @@
 # Changelog
 
+## 2.2.2 (2026-09-24)
+
+- Made PE-T2I and PE-I2I optional, with a bilingual reminder, direct generation, and a documented fallback if enhancement fails.
+- Merged external-drive fixes for scoped dependency checks, concurrent bounded probes, cancellation and visible check actions.
+- Stage dependency repairs separately and activate only after validation; reuse working GPU packages and preserve old environments and model data.
+- Remember validated runtimes on both platforms and custom Windows storage locations across releases. Preserve system and Store Python discovery.
+- Distinguish CPU-only PyTorch from driver failures and report malformed Windows storage configuration before opening the workspace.
+
+两个平台均可在不下载增强模型的情况下直接生图、改图。修复不再清空原有环境，升级可复用保存的运行环境和存储位置。详见 [2.2.2 发布说明](docs/releases/v2.2.2.md)。
+
 ## 2.2.1 (2026-09-21)
 
 - Fixed Windows Python discovery in freshly extracted downloads. The app checks an existing app environment, Python Launcher, registered installations and current/user/system PATH, then probes the actual interpreter.
